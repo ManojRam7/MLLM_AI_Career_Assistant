@@ -1,0 +1,161 @@
+"""End-to-end orchestrator: discover -> normalise/filter/dedupe -> store -> score
+-> tailor -> notify. Degrades gracefully when keys/DB are absent (useful for testing)."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from . import notify
+from .bucketlist import is_bucket, load_bucket_companies
+from .config import Config, load_config
+from .dedupe import dedupe
+from .filtering import apply_filters
+from .normalize import normalize
+from .sources.adzuna import AdzunaSource
+from .sources.ats import ATSSource
+from .sources.reed import ReedSource
+
+
+class Pipeline:
+    def __init__(self, cfg: Config):
+        self.cfg = cfg
+        self.s = cfg.settings
+
+    def _sources(self):
+        sec = self.cfg.secrets
+        src_cfg = self.s.get("sources", {})
+        out = []
+        if src_cfg.get("reed", {}).get("enabled"):
+            out.append(ReedSource(sec.reed_api_key))
+        if src_cfg.get("adzuna", {}).get("enabled"):
+            out.append(AdzunaSource(sec.adzuna_app_id, sec.adzuna_app_key,
+                                    src_cfg.get("adzuna", {}).get("country", "gb")))
+        if src_cfg.get("ats", {}).get("enabled"):
+            out.append(ATSSource(self.s.get("bucket_list", {}).get("path", "data/companies_bucketlist.csv"),
+                                 self.s.get("seniority", {}).get("include", [])))
+        return out
+
+    def discover(self, recency_days: int):
+        search = self.s.get("search", {})
+        jobs, statuses = [], []
+        for src in self._sources():
+            res = src.fetch(queries=search.get("queries", []), locations=search.get("locations", []),
+                            recency_days=recency_days, limit=search.get("max_per_source", 100))
+            jobs.extend(res.jobs)
+            statuses.append({"source": res.source, "status": res.status, "count": len(res.jobs), "message": res.message})
+        return jobs, statuses
+
+    def run(self, mode: str = "recurring") -> dict:
+        search = self.s.get("search", {})
+        recency = search.get("recency_days_first", 14) if mode == "first" else search.get("recency_days_recurring", 1)
+        scoring = self.s.get("scoring", {})
+
+        raw, statuses = self.discover(recency)
+        normalize(raw)
+        sen = self.s.get("seniority", {})
+        targets, rejected = apply_filters(raw, sen.get("include", []), sen.get("exclude_title", []))
+        targets = dedupe(targets)
+
+        # Boost: flag jobs whose employer is on the bucket list so they jump the
+        # scoring/tailoring queue (db queries ORDER BY in_bucket DESC).
+        bucket = load_bucket_companies(
+            self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_bucketlist.csv")))
+        for j in targets:
+            j.in_bucket = is_bucket(j.company, bucket)
+
+        summary = {"mode": mode, "discovered": len(raw), "targets": len(targets),
+                   "rejected": len(rejected), "bucket_matches": sum(1 for j in targets if j.in_bucket),
+                   "sources": statuses, "scored": 0, "tailored": 0}
+
+        # snapshot for offline inspection
+        Path("output").mkdir(exist_ok=True)
+        Path("output/discovered.json").write_text(
+            json.dumps([t.to_db() for t in targets[:200]], indent=2), encoding="utf-8")
+
+        db_url = self.cfg.secrets.supabase_db_url
+        if not db_url:
+            summary["note"] = "No SUPABASE_DB_URL: discovered jobs written to output/discovered.json only."
+            Path("output/last_run.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+            return summary
+
+        from .db import Store
+
+        store = Store(db_url)
+        store.init_schema()
+        new, dup = store.upsert_jobs(targets)
+        summary["stored_new"], summary["stored_dup"] = new, dup
+
+        # fit scoring + tailoring need LLM keys. Capped per run + resilient to
+        # free-tier rate limits (a 429 stops the LLM phase cleanly and resumes next run).
+        if self.cfg.secrets.gemini_api_key or self.cfg.secrets.groq_api_key:
+            import time
+
+            from .cv.render_docx import render
+            from .llm.client import LLM, LLMError
+            from .llm.fit_score import score_fit
+            from .llm.tailor import tailor
+
+            llm = LLM(self.cfg)
+            lc = self.s.get("llm", {})
+            delay = float(lc.get("request_delay_seconds", 1.0))
+            errors: list[str] = []
+            llm_exhausted = False
+
+            def _rate_limited(exc) -> bool:
+                m = str(exc).lower()
+                return "429" in m or "rate limit" in m or "quota" in m or "resource_exhausted" in m
+
+            for job in store.jobs_needing_score(limit=scoring.get("max_score_per_run", 40)):
+                try:
+                    fit = score_fit(llm, self.cfg.base_cv, job)
+                except LLMError as exc:
+                    errors.append(str(exc)[:140])
+                    if _rate_limited(exc):
+                        summary["llm_note"] = "Rate limit during scoring; remaining jobs continue next run."
+                        llm_exhausted = True
+                        break
+                    continue
+                status = "shortlisted" if fit.score >= scoring.get("shortlist_threshold", 60) else "scored"
+                store.update(job["dedupe_key"], fit_score=fit.score, fit_reasoning=fit.reasoning,
+                             ghost_flag=fit.ghost_flag, status=status, gaps=fit.gaps)
+                summary["scored"] += 1
+                time.sleep(delay)
+
+            # if scoring already exhausted the quota, don't waste a call on tailoring
+            tailor_jobs = ([] if llm_exhausted else
+                           store.jobs_to_tailor(scoring.get("tailor_threshold", 70),
+                                                limit=scoring.get("max_tailor_per_run", 6)))
+            rulebook = (self.cfg.path(lc.get("rulebook", "config/rulebook.md")).read_text(encoding="utf-8")
+                        if tailor_jobs else "")
+            for job in tailor_jobs:
+                try:
+                    t = tailor(llm, rulebook, self.cfg.base_cv, job, max_repair=lc.get("max_repair_loops", 1))
+                except LLMError as exc:
+                    errors.append(str(exc)[:140])
+                    if _rate_limited(exc):
+                        summary["llm_note"] = "Rate limit during tailoring; remaining jobs continue next run."
+                        break
+                    continue
+                cv_path, cover_path = render(self.cfg.base_cv, t, job)
+                store.update(job["dedupe_key"], cv_path=cv_path, cover_path=cover_path,
+                             status="tailored", gaps=t.gaps)
+                summary["tailored"] += 1
+                time.sleep(delay)
+            if errors:
+                summary["llm_errors"] = errors[:5]
+        else:
+            summary["note"] = "No LLM key: stored jobs but skipped scoring/tailoring."
+
+        digest = store.digest(min_fit=scoring.get("tailor_threshold", 70))
+        notify.write_digest(digest)
+        notify.send_telegram(digest, self.cfg.secrets.telegram_bot_token, self.cfg.secrets.telegram_chat_id)
+
+        # persist run history (dashboard reads these) + a local snapshot
+        store.log_run(summary)
+        Path("output/last_run.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        store.close()
+        return summary
+
+
+def run(mode: str = "recurring") -> dict:
+    return Pipeline(load_config()).run(mode)

@@ -1,0 +1,72 @@
+{
+  "name": "Manoj Ram Mopati",
+  "default_title": "Data Scientist",
+  "contact": {
+    "location": "Birmingham, UK",
+    "open_to_relocation": true,
+    "phone": "07810294727",
+    "email": "manojrammopati111@gmail.com",
+    "linkedin": "linkedin.com/in/manojrammopati",
+    "github": "github.com/ManojRam7",
+    "portfolio": "manojram7.github.io/RamMopatisPortfolio"
+  },
+  "right_to_work": "UK Graduate visa (eligible to work in the UK without sponsorship)",
+  "profile_facts": [
+    "3+ years' commercial experience across retail, consumer goods, financial services (collections) and insurance at Infosys",
+    "Marketing Mix Modelling and trade-promotion optimisation improved profit margins 5-8% across 100+ markets/regions",
+    "RFM risk segmentation over 200K+ customers raised debt-recovery rates 14% and cut recovery time 12 days",
+    "Production ML on Azure Databricks with CI/CD, Docker, Git; recent GenAI (RAG)",
+    "MSc Data Science, Coventry University (predicted Distinction); Microsoft certified AZ-900, PL-300, DP-600"
+  ],
+  "skills": {
+    "Programming": "Python (pandas, NumPy, scikit-learn, SciPy, TensorFlow, PyTorch), SQL, PySpark, R",
+    "Machine Learning & Statistics": "Regression, classification, clustering, time series, NLP, GenAI / RAG, tree-based models, RFM segmentation, feature engineering, A/B testing, hypothesis testing, statistical modelling",
+    "Cloud & MLOps": "Azure (Databricks, Data Factory, Data Lake, Azure ML, Azure SQL, DevOps), GCP, Docker, CI/CD (GitHub Actions), Git, Apache Airflow, model lifecycle management",
+    "Data & BI": "Power BI, DAX, Power Query, Microsoft Fabric, Tableau, Looker Studio, Excel",
+    "Ways of working": "Agile / Jira, data governance, data quality, stakeholder management"
+  },
+  "experience": [
+    {
+      "title": "Data Scientist - Infosys Limited (client: Mars Wrigley), Bangalore, India",
+      "dates": "Sep 2023 - May 2025",
+      "bullets": [
+        "Built Marketing Mix Models (log-log regression) on 3+ years of weekly data to quantify how media, price, promotion, seasonality and competition drove sales, validated out-of-sample (R2, MAPE).",
+        "Decomposed sales into baseline vs incremental and attributed contribution and ROI to each driver, informing multi-million-pound media and trade-spend decisions.",
+        "Fed elasticities into an OR-Tools optimiser, improving profit margins by 5-8% across 100+ markets.",
+        "Built and deployed the end-to-end ML lifecycle on Azure Databricks (Azure ML, Data Lake, DevOps, Git) with CI/CD into production.",
+        "Built a Power Apps app with Power Automate flows for Strategic Revenue Management stakeholders to capture pricing/promotion inputs and refresh Power BI reporting.",
+        "Partnered with senior stakeholders and mentored junior analysts on modelling approach, validation and code quality."
+      ]
+    },
+    {
+      "title": "Associate Data Scientist - Infosys Limited, Bangalore, India",
+      "dates": "Dec 2022 - Sep 2023",
+      "bullets": [
+        "Built an RFM segmentation model in Python over 200K+ customers (financial-services collections) using payment behaviour and outstanding debt to classify high-, medium- and low-risk profiles.",
+        "Designed risk-tiered debt-recovery interventions that increased recovery rates by 14% and cut average recovery time by 12 days.",
+        "Wrote complex SQL and Python for data cleansing and transformation on large datasets.",
+        "Built executive Power BI and Tableau dashboards covering customer segments, debt ageing, exposure and recovery status."
+      ]
+    },
+    {
+      "title": "Associate Data Analyst - Infosys Limited, Bangalore, India",
+      "dates": "Feb 2022 - Dec 2022",
+      "bullets": [
+        "Analysed 1M+ claims, policy and provider records in SQL, Power BI and Excel to surface SLA breaches, risk patterns and payment delays.",
+        "Built Power BI dashboards monitoring real-time claim risk and resolution bottlenecks for operations teams.",
+        "Partnered with cross-functional teams to present insights and support reporting and documentation."
+      ]
+    }
+  ],
+  "projects": [
+    {"name": "RAG Analytics Assistant for Business Reports", "text": "GenAI assistant using retrieval-augmented generation (LangChain, FAISS, Streamlit) to query business reports and return source-grounded, cited summaries, with an offline evaluation harness. (github.com/ManojRam7)"},
+    {"name": "Health Insurance ML Pipeline", "text": "medallion (Bronze-Silver-Gold) PySpark pipeline over 62K+ records training churn, fraud-risk and high-cost-claim models, with Docker and CI/CD. (github.com/ManojRam7/health_insurance_project)"},
+    {"name": "Customer Churn Prediction Service", "text": "Random Forest churn model served via FastAPI, containerised with Docker and deployed to Azure Container Apps with GitHub Actions CI/CD. (github.com/ManojRam7/CustomerChurn_Prediction)"}
+  ],
+  "education": [
+    {"degree": "MSc Data Science - Coventry University, UK", "meta": "2025 - 2026 | Predicted: Distinction (70%+)"},
+    {"degree": "BTech Mechanical Engineering - Visvodaya Engineering College, India", "meta": "2017 - 2021 | 65% (UK 2:1 equivalent)"}
+  ],
+  "certifications": "Microsoft Certified - Azure Fundamentals (AZ-900), Power BI Data Analyst Associate (PL-300), Fabric Analytics Engineer Associate (DP-600)",
+  "extra_skills_pool": ["MMM", "incrementality", "causal inference", "multi-touch attribution", "Bayesian modelling", "uplift modelling", "Power Apps", "Power Automate", "Databricks on AWS", "LLM fine-tuning (LoRA/QLoRA)", "vector databases (FAISS)", "prompt engineering", "responsible AI"]
+}

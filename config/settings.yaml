@@ -1,0 +1,74 @@
+# uk-jobops configuration. Edit freely; secrets live in .env / GitHub Secrets.
+
+candidate:
+  name: "Manoj Ram Mopati"
+  base_cv: "src/uk_jobops/cv/base_cv.json"   # your real experience (single source of truth)
+  right_to_work: "UK Graduate visa (eligible to work in the UK without sponsorship)"
+  locations_base: "Birmingham, UK"
+  open_to_relocation: true
+
+search:
+  queries:
+    - "data scientist"
+    - "machine learning engineer"
+    - "marketing data scientist"
+    - "associate data scientist"
+    - "junior data scientist"
+    - "graduate data scientist"
+    - "data science analyst"
+    - "applied scientist"
+    - "AI engineer"
+  locations: ["United Kingdom", "London", "Birmingham", "Manchester", "Edinburgh",
+              "Glasgow", "Leeds", "Bristol", "Remote UK"]
+  recency_days_recurring: 1      # each 6h run looks at the last day
+  recency_days_first: 14         # first run backfills 2 weeks
+  max_per_source: 100
+
+seniority:
+  include:                       # role must match one of these (on the TITLE)
+    - "data scientist"
+    - "machine learning engineer"
+    - "associate data scientist"
+    - "junior data scientist"
+    - "graduate data scientist"
+    - "data science analyst"
+    - "applied scientist"
+    - "ai engineer"
+  exclude_title:                 # drop these (whole-word, IC-level only)
+    - "senior"
+    - "sr"
+    - "lead"
+    - "principal"
+    - "staff"
+    - "head of"
+    - "director"
+    - "vp"
+    - "vice president"
+    - "chief"
+    - "manager"
+
+scoring:
+  tailor_threshold: 70           # only tailor a CV when fit score >= this (saves tokens)
+  shortlist_threshold: 60
+  max_score_per_run: 40          # cap LLM fit-scoring per run (keeps within free tiers)
+  max_tailor_per_run: 6          # cap CV tailoring per run; the backlog clears over runs
+
+sources:
+  reed: { enabled: true }
+  adzuna: { enabled: true, country: "gb" }
+  ats: { enabled: true }         # Greenhouse / Lever / Ashby for bucket-list companies
+  careers_playwright: { enabled: false }
+  apify: { enabled: false }      # paid
+  serpapi: { enabled: false }    # paid
+
+bucket_list:
+  path: "data/companies_bucketlist.csv"   # company_name, careers_url (replace with yours)
+
+llm:
+  primary: "gemini"              # gemini | groq | anthropic | openai
+  critic: ""                     # "" = off (saves ~half the calls). Set "groq" only if you have spare quota.
+  gemini_model: "gemini-2.0-flash"
+  groq_model: "llama-3.3-70b-versatile"
+  max_repair_loops: 1
+  request_delay_seconds: 4.0     # ~15 requests/min - respects Gemini Flash free-tier RPM
+  rulebook: "config/rulebook.md"

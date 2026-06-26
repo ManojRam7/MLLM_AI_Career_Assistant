@@ -1,0 +1,5 @@
+# Dashboard only - the pipeline itself does not need these.
+# Install with:  pip install -r requirements-dashboard.txt
+-r requirements.txt
+streamlit>=1.36
+pandas>=2.0
