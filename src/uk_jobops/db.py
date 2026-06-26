@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
+from .config import ConfigError
 from .models import Job
 
 SCHEMA = """
@@ -74,9 +75,16 @@ def _now() -> str:
 
 class Store:
     def __init__(self, db_url: str):
+        u = (db_url or "").strip()
+        if not (u.startswith("postgresql://") or u.startswith("postgres://")):
+            raise ConfigError(
+                "SUPABASE_DB_URL is not a Postgres connection string. It must start with "
+                "'postgresql://'. Copy it from Supabase > Project Settings > Database > "
+                "Connection string > URI (Transaction pooler, ends ':6543/postgres') and put your "
+                "database password in it. A Supabase API key (anon/service_role) will not work.")
         import psycopg
 
-        self.conn = psycopg.connect(db_url, autocommit=True)
+        self.conn = psycopg.connect(u, autocommit=True)
 
     def init_schema(self) -> None:
         with self.conn.cursor() as cur:

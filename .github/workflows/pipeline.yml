@@ -11,6 +11,12 @@ on:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   run:
@@ -23,6 +29,7 @@ jobs:
           python-version: "3.11"
           cache: "pip"
       - run: pip install -r requirements.txt
+
       - name: Run pipeline
         env:
           REED_API_KEY: ${{ secrets.REED_API_KEY }}
@@ -34,6 +41,13 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python scripts/run_pipeline.py --mode "${{ github.event.inputs.mode || 'recurring' }}"
+
+      - name: Build static dashboard
+        if: always()
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python scripts/build_static_dashboard.py
+
       - name: Upload tailored CVs + digest
         if: always()
         uses: actions/upload-artifact@v4
@@ -41,3 +55,23 @@ jobs:
           name: jobops-output
           path: output/
           retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload Pages artifact
+        if: always()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  # Publishes the static dashboard to a free github.io URL after every run.
+  deploy:
+    needs: run
+    if: always()
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

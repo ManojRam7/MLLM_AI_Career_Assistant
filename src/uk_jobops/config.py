@@ -19,6 +19,10 @@ except Exception:  # pragma: no cover
 ROOT = Path(__file__).resolve().parents[2]
 
 
+class ConfigError(RuntimeError):
+    """A required secret or setting is missing or malformed (shown to the user, no traceback)."""
+
+
 def _resolve(rel: str) -> Path:
     p = Path(rel)
     return p if p.is_absolute() else ROOT / p

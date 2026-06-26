@@ -5,5 +5,7 @@ __pycache__/
 venv/
 .pytest_cache/
 output/
+site/
+.streamlit/secrets.toml
 *.sqlite
 .DS_Store

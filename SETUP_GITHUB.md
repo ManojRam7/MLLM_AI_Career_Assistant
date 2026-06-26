@@ -46,20 +46,18 @@ TELEGRAM_BOT_TOKEN   (optional)
 TELEGRAM_CHAT_ID     (optional)
 ```
 
-## 2. Push the code (private repo)
+## 2. Push the code
+
+Already pushed to `MLLM_AI_Career_Assistant`. For future updates:
 
 ```bash
-cd ~/Documents/GitHub/uk-jobops
-git init                       # if not already a repo
-git add .
-git commit -m "uk-jobops: pipeline + dashboard"
-git branch -M main
-git remote add origin https://github.com/<you>/uk-jobops.git
-git push -u origin main
+cd ~/Documents/GitHub/MLLM_AI_Career_Assistant
+git add -A
+git commit -m "update"
+git push
 ```
 
-`.env` is git-ignored, so your keys never leave your machine. Confirm `.gitignore`
-contains `.env` before pushing.
+`.env`, `output/` and `site/` are git-ignored, so your keys and generated files never leave your machine.
 
 ## 3. Enable and test the schedule
 
@@ -68,12 +66,26 @@ contains `.env` before pushing.
 3. Watch the run; when green, open it and download the **jobops-output** artifact (digest + any tailored CVs).
 4. After that, it runs automatically every 6 hours. New jobs and run history appear in the dashboard.
 
-## 4. (Optional) deploy the dashboard free
+## 4. Turn on the live dashboard (GitHub Pages)
 
-Streamlit Community Cloud → New app → point at `app/dashboard.py` → in **Advanced settings → Secrets** add:
+After every run the workflow builds a static dashboard and publishes it to GitHub Pages.
+Enable it once:
 
+1. Repo → **Settings → Pages** → under **Build and deployment**, set **Source: GitHub Actions**.
+2. Run the workflow once (step 3). The **deploy** job prints the URL; it also shows at Settings → Pages:
+
+   ```
+   https://<your-username>.github.io/MLLM_AI_Career_Assistant/
+   ```
+
+3. Open it anytime — it refreshes every 6 hours with new jobs, fit scores and run history.
+   (Even if a run fails on a bad secret, the page still publishes with a note telling you what to fix.)
+
+The Pages dashboard is **read-only** (KPIs, jobs, scores, sources, run history, searchable job table).
+To **edit** statuses/notes, **add** a job, or **run** the pipeline from a button, launch the interactive
+app locally — it writes back to the same Supabase database:
+
+```bash
+pip install -r requirements-dashboard.txt
+python -m streamlit run app/dashboard.py
 ```
-SUPABASE_DB_URL = "postgresql://...:6543/postgres"
-```
-
-Then the dashboard is reachable from any browser, reading the same database the Action writes to.
