@@ -3,6 +3,7 @@ Connect DBeaver (or the dashboard) to the same SUPABASE_DB_URL."""
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -34,6 +35,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     applied_at   TEXT DEFAULT '',
     cv_path      TEXT,
     cover_path   TEXT,
+    cv_blob      BYTEA,
+    cover_blob   BYTEA,
     gaps         JSONB DEFAULT '[]',
     first_seen_at TEXT,
     last_seen_at  TEXT
@@ -41,6 +44,8 @@ CREATE TABLE IF NOT EXISTS jobs (
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS in_bucket BOOLEAN DEFAULT FALSE;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS applied_at TEXT DEFAULT '';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cv_blob BYTEA;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cover_blob BYTEA;
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_fit_idx ON jobs(fit_score DESC);
 
@@ -135,6 +140,43 @@ class Store:
                  summary.get("rejected"), summary.get("scored"), summary.get("tailored"),
                  summary.get("stored_new"), summary.get("llm_note", "")))
 
+    def dedupe_existing(self) -> int:
+        """Collapse rows that are the same (title, company), keeping the most-progressed
+        one (advanced status, then a tailored CV, then highest fit, then most recent).
+        Cleans up legacy cross-location duplicates from before identity dropped location."""
+        sql = """
+        DELETE FROM jobs WHERE dedupe_key IN (
+          SELECT dedupe_key FROM (
+            SELECT dedupe_key, row_number() OVER (
+              PARTITION BY lower(btrim(title)), lower(btrim(company))
+              ORDER BY CASE status WHEN 'offer' THEN 6 WHEN 'interview' THEN 5 WHEN 'applied' THEN 4
+                       WHEN 'tailored' THEN 3 WHEN 'shortlisted' THEN 2 WHEN 'scored' THEN 1 ELSE 0 END DESC,
+                       (cv_blob IS NOT NULL) DESC, fit_score DESC, last_seen_at DESC
+            ) AS rn FROM jobs
+          ) t WHERE t.rn > 1
+        )"""
+        with self.conn.cursor() as cur:
+            cur.execute(sql)
+            return cur.rowcount
+
+    def purge_excluded(self, exclude_title: list[str], exclude_company: list[str]) -> int:
+        """Delete already-stored rows that now match the exclude rules (junk stored
+        before the filters existed). Skips manually-added jobs. Idempotent - safe every run."""
+        clauses: list[str] = []
+        params: list[str] = []
+        for term in (exclude_title or []):
+            clauses.append("title ~* %s")
+            params.append(r"\y" + re.escape(term) + r"\y")  # whole-word, mirrors filtering.py
+        for term in (exclude_company or []):
+            clauses.append("company ILIKE %s")
+            params.append(f"%{term}%")
+        if not clauses:
+            return 0
+        sql = "DELETE FROM jobs WHERE is_custom = FALSE AND (" + " OR ".join(clauses) + ")"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.rowcount
+
     # ------------------------------------------------------------------- reads
     def _rows(self, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
         with self.conn.cursor() as cur:
@@ -165,6 +207,11 @@ class Store:
             "SELECT dedupe_key,title,company,location,source,in_bucket,fit_score,seniority,status,"
             "notes,applied_at,url,cv_path,cover_path,fit_reasoning,ghost_flag,posted_date,first_seen_at "
             "FROM jobs ORDER BY in_bucket DESC, fit_score DESC, first_seen_at DESC LIMIT %s", (limit,))
+
+    def tailored_blobs(self) -> list[dict[str, Any]]:
+        return self._rows(
+            "SELECT dedupe_key,title,company,fit_score,in_bucket,fit_reasoning,url,cv_blob,cover_blob "
+            "FROM jobs WHERE cv_blob IS NOT NULL ORDER BY in_bucket DESC, fit_score DESC")
 
     def status_counts(self) -> dict[str, int]:
         return {r["status"]: r["n"] for r in self._rows("SELECT status, COUNT(*) n FROM jobs GROUP BY status")}

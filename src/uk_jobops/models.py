@@ -42,8 +42,10 @@ class Job:
     raw: dict[str, Any] = field(default_factory=dict)
 
     def make_key(self) -> str:
-        # exact key; fuzzy cross-source merge happens in dedupe.py
-        base = "|".join([_norm(self.title), _norm(self.company), _norm(self.location)])
+        # identity = title + company only. Location is deliberately excluded so the
+        # same role advertised across many towns collapses to ONE row (and is scored
+        # once), instead of a new row per location on every run.
+        base = "|".join([_norm(self.title), _norm(self.company)])
         return hashlib.sha256(base.encode("utf-8")).hexdigest()[:24]
 
     def finalize(self) -> "Job":

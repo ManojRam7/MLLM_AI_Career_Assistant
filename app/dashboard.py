@@ -56,6 +56,11 @@ def load_runs(url: str) -> pd.DataFrame:
     return pd.DataFrame(get_store(url).recent_runs(40))
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def load_blobs(url: str) -> list:
+    return get_store(url).tailored_blobs()
+
+
 cfg = load_config()
 url = get_db_url()
 
@@ -237,25 +242,25 @@ with tab_tracker:
 # --------------------------------------------------------------- TAILORED CVS
 with tab_cvs:
     st.subheader("Tailored CVs and cover letters")
-    if jobs.empty or "cv_path" not in jobs:
-        st.info("No tailored CVs yet.")
-    else:
-        done = jobs[jobs["cv_path"].fillna("").str.len() > 0]
-        if done.empty:
-            st.info("No tailored CVs yet. The pipeline tailors the highest-fit jobs each run.")
-        for _, r in done.iterrows():
-            with st.expander(f"⭐ {r['title']} · {r['company']}  —  fit {r['fit_score']}"
-                             if r["in_bucket"] else f"{r['title']} · {r['company']}  —  fit {r['fit_score']}"):
-                if r.get("fit_reasoning"):
-                    st.write(r["fit_reasoning"])
-                dcols = st.columns(2)
-                for col, path, label in ((dcols[0], r.get("cv_path"), "⬇️ CV (.docx)"),
-                                         (dcols[1], r.get("cover_path"), "⬇️ Cover letter (.docx)")):
-                    p = Path(path) if path else None
-                    if p and p.exists():
-                        col.download_button(label, p.read_bytes(), file_name=p.name, key=f"{r['dedupe_key']}{label}")
-                    else:
-                        col.caption(f"{label.split('(')[0].strip()}: file not on this machine")
+    blobs = load_blobs(url)
+    if not blobs:
+        st.info("No tailored CVs yet. The pipeline tailors the highest-fit jobs each run.")
+    _docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    for r in blobs:
+        star = "⭐ " if r.get("in_bucket") else ""
+        with st.expander(f"{star}{r['title']} · {r['company']}  —  fit {r.get('fit_score') or 0}"):
+            if r.get("fit_reasoning"):
+                st.write(r["fit_reasoning"])
+            base = "".join(c for c in f"{r['company']}_{r['title']}" if c.isalnum() or c in " _-").strip().replace(" ", "_")[:60]
+            dcols = st.columns(2)
+            for col, blob, label, suffix in (
+                (dcols[0], r.get("cv_blob"), "⬇️ CV (.docx)", "CV"),
+                (dcols[1], r.get("cover_blob"), "⬇️ Cover letter (.docx)", "CoverLetter")):
+                if blob:
+                    col.download_button(label, bytes(blob), file_name=f"{base}_{suffix}.docx",
+                                        key=f"{r['dedupe_key']}{suffix}", mime=_docx)
+                else:
+                    col.caption(f"{suffix}: not available")
 
 # ----------------------------------------------------------------- ADD A JOB
 with tab_add:

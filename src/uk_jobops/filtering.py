@@ -27,11 +27,15 @@ def classify(title: str, include: list[str], exclude_title: list[str]) -> tuple[
     return True, "data-scientist"
 
 
-def apply_filters(jobs: list[Job], include: list[str], exclude_title: list[str]) -> tuple[list[Job], list[Job]]:
+def apply_filters(jobs: list[Job], include: list[str], exclude_title: list[str],
+                  exclude_company: list[str] | None = None) -> tuple[list[Job], list[Job]]:
     """Split into (targets, rejected)."""
+    excl_co = [c.lower() for c in (exclude_company or [])]
     targets, rejected = [], []
     for j in jobs:
         ok, label = classify(j.title, include, exclude_title)
+        if ok and excl_co and any(c in (j.company or "").lower() for c in excl_co):
+            ok, label = False, "excluded-company"
         j.seniority = label
         j.is_target = ok
         (targets if ok else rejected).append(j)

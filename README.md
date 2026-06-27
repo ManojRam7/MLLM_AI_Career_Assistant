@@ -38,9 +38,9 @@ Built to run for **£0** on free API tiers and GitHub Actions.
 ## Project structure
 
 ```
-uk-jobops/
+MLLM_AI_Career_Assistant/        # repo name; the Python package is src/uk_jobops
 ├── app/
-│   └── dashboard.py              # Streamlit dashboard (overview, runs, tracker, CV downloads, add-job)
+│   └── dashboard.py              # interactive Streamlit dashboard (overview, runs, editable tracker, CV downloads, add-job, run-now)
 ├── config/
 │   ├── settings.yaml             # all tunable settings: search, filters, scoring caps, sources, llm
 │   └── rulebook.md               # the CV-tailoring system prompt (rules the model MUST follow)
@@ -51,9 +51,9 @@ uk-jobops/
 │   ├── models.py                 # Job, FitResult, TailoredCV dataclasses
 │   ├── bucketlist.py             # load + match target companies (the priority boost)
 │   ├── normalize.py              # clean titles / locations / dates
-│   ├── filtering.py              # keep IC-level DS roles, drop senior/lead/principal/manager
-│   ├── dedupe.py                 # fuzzy cross-source de-duplication (rapidfuzz)
-│   ├── db.py                     # Supabase/Postgres store + tracker + pipeline-run history
+│   ├── filtering.py              # keep IC-level DS roles; drop senior/lead/manager/trainee + course-spam companies
+│   ├── dedupe.py                 # fuzzy de-dup; collapses the same role across locations (rapidfuzz)
+│   ├── db.py                     # Supabase/Postgres store: jobs, tracker, run history, dedup/purge cleanup, CV blobs
 │   ├── notify.py                 # writes a digest file + optional Telegram message
 │   ├── pipeline.py               # orchestrates the whole run end to end
 │   ├── sources/
@@ -73,6 +73,7 @@ uk-jobops/
 │   ├── init_db.py                # create the database tables
 │   ├── run_pipeline.py           # run discovery → score → tailor   (--mode first | recurring)
 │   ├── add_job.py                # add a custom job from the command line
+│   ├── build_static_dashboard.py # render the read-only GitHub Pages dashboard (site/) + downloadable CV files
 │   └── smoke_test.py             # doctor: checks keys, tiny discovery, one tailor, DB connect
 ├── tests/test_core.py            # offline regression tests (filter, dedupe, coercion, validator)
 ├── .github/workflows/pipeline.yml# scheduled run, every 6 hours
@@ -80,8 +81,13 @@ uk-jobops/
 ├── requirements-dashboard.txt    # the above + streamlit + pandas
 ├── .env.example                  # template for your API keys
 ├── pyproject.toml                # src layout + pytest config
-└── conftest.py                   # puts src/ on the path for tests
+├── conftest.py                   # puts src/ on the path for tests
+└── SETUP_GITHUB.md               # secrets + push + GitHub Pages walkthrough
 ```
+
+Two dashboards read the same database: the **interactive** Streamlit app (`app/dashboard.py`,
+editable tracker / add-job / CV downloads / run-now) for local use, and a **read-only** static
+dashboard (`scripts/build_static_dashboard.py` → `site/`) auto-published to GitHub Pages every run.
 
 ---
 

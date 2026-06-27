@@ -53,7 +53,8 @@ class Pipeline:
         raw, statuses = self.discover(recency)
         normalize(raw)
         sen = self.s.get("seniority", {})
-        targets, rejected = apply_filters(raw, sen.get("include", []), sen.get("exclude_title", []))
+        targets, rejected = apply_filters(raw, sen.get("include", []), sen.get("exclude_title", []),
+                                          sen.get("exclude_company", []))
         targets = dedupe(targets)
 
         # Boost: flag jobs whose employer is on the bucket list so they jump the
@@ -84,6 +85,15 @@ class Pipeline:
         store.init_schema()
         new, dup = store.upsert_jobs(targets)
         summary["stored_new"], summary["stored_dup"] = new, dup
+        # collapse any legacy/cross-location duplicates already in the table,
+        # keeping the most-progressed row - runs BEFORE scoring so we never spend
+        # LLM calls on the same role twice.
+        removed = store.dedupe_existing()
+        if removed:
+            summary["deduped_existing"] = removed
+        purged = store.purge_excluded(sen.get("exclude_title", []), sen.get("exclude_company", []))
+        if purged:
+            summary["purged_excluded"] = purged
 
         # fit scoring + tailoring need LLM keys. Capped per run + resilient to
         # free-tier rate limits (a 429 stops the LLM phase cleanly and resumes next run).
@@ -137,8 +147,12 @@ class Pipeline:
                         break
                     continue
                 cv_path, cover_path = render(self.cfg.base_cv, t, job)
+                # store the .docx bytes in the DB so both dashboards can offer
+                # downloads anywhere (the runner's files are otherwise ephemeral)
+                cvb = Path(cv_path).read_bytes() if cv_path and Path(cv_path).exists() else None
+                covb = Path(cover_path).read_bytes() if cover_path and Path(cover_path).exists() else None
                 store.update(job["dedupe_key"], cv_path=cv_path, cover_path=cover_path,
-                             status="tailored", gaps=t.gaps)
+                             cv_blob=cvb, cover_blob=covb, status="tailored", gaps=t.gaps)
                 summary["tailored"] += 1
                 time.sleep(delay)
             if errors:

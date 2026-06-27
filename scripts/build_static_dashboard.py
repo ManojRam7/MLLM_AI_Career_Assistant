@@ -1,16 +1,17 @@
-"""Render a self-contained, tabbed static dashboard to site/index.html from Supabase.
-The Actions workflow publishes site/ to GitHub Pages after every run, so it is
-continuously viewable (read-only). Editing the tracker is done in the Streamlit app.
+"""Render a self-contained, tabbed static dashboard to site/index.html from Supabase,
+and write tailored CV/cover .docx files into site/cvs/ so they're downloadable.
+The Actions workflow publishes site/ to GitHub Pages after every run (read-only).
 
-Tabs (Overview / Jobs / Tailored / Pipeline) are client-side JS - no server needed,
-which is why GitHub Pages can host it. The interactive features (editing status,
-adding jobs, CV downloads, run-now) live only in the local Streamlit app."""
+Tabs (Overview / Jobs / Tracker / Tailored / Pipeline) are client-side JS - no server
+needed, which is why GitHub Pages can host it. Editing the tracker, adding jobs and
+triggering runs live only in the local Streamlit app."""
 from __future__ import annotations
 
 import datetime as dt
 import html
 import json
 import pathlib
+import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
@@ -31,6 +32,7 @@ def _gather() -> dict:
         "runs": store.recent_runs(40),
         "status": store.status_counts(),
         "source": store.source_counts(),
+        "blobs": store.tailored_blobs(),
         "llm": cfg.settings.get("llm", {}),
         "scoring": cfg.settings.get("scoring", {}),
     }
@@ -42,6 +44,33 @@ def _esc(x) -> str:
     return html.escape(str(x if x is not None else ""))
 
 
+def _safe(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9 _-]+", "", s or "").strip().replace(" ", "_")[:70]
+
+
+def _write_cvs(blobs: list[dict], outdir: pathlib.Path) -> dict:
+    """Write each tailored .docx into site/cvs/ and return {dedupe_key: {cv,cover}} URLs."""
+    m: dict[str, dict] = {}
+    if not blobs:
+        return m
+    outdir.mkdir(parents=True, exist_ok=True)
+    for r in blobs:
+        key = r.get("dedupe_key", "")
+        base = (_safe(f"{r.get('company','')}_{r.get('title','')}") or "cv") + "_" + key[:6]
+        entry = {}
+        if r.get("cv_blob"):
+            fn = f"{base}_CV.docx"
+            (outdir / fn).write_bytes(bytes(r["cv_blob"]))
+            entry["cv"] = f"cvs/{fn}"
+        if r.get("cover_blob"):
+            fn = f"{base}_CoverLetter.docx"
+            (outdir / fn).write_bytes(bytes(r["cover_blob"]))
+            entry["cover"] = f"cvs/{fn}"
+        if entry:
+            m[key] = entry
+    return m
+
+
 def _kpi(label: str, value) -> str:
     return f'<div class="kpi"><div class="n">{_esc(value)}</div><div class="l">{_esc(label)}</div></div>'
 
@@ -50,30 +79,27 @@ def _bars(counts: dict) -> str:
     if not counts:
         return '<p class="muted">No data yet.</p>'
     top = max(counts.values()) or 1
-    out = []
-    for k, v in sorted(counts.items(), key=lambda kv: -kv[1]):
-        out.append(f'<div class="bar"><span class="bl">{_esc(k)}</span>'
-                   f'<span class="bt"><i style="width:{int(v / top * 100)}%"></i></span><span class="bv">{v}</span></div>')
-    return "".join(out)
+    return "".join(
+        f'<div class="bar"><span class="bl">{_esc(k)}</span>'
+        f'<span class="bt"><i style="width:{int(v / top * 100)}%"></i></span><span class="bv">{v}</span></div>'
+        for k, v in sorted(counts.items(), key=lambda kv: -kv[1]))
 
 
 def _fit_bars(jobs: list[dict]) -> str:
-    buckets = {"90+": 0, "80-89": 0, "70-79": 0, "60-69": 0, "50-59": 0, "<50": 0}
+    b = {"90+": 0, "80-89": 0, "70-79": 0, "60-69": 0, "50-59": 0, "<50": 0}
     for j in jobs:
         f = int(j.get("fit_score") or 0)
         if f <= 0:
             continue
-        key = ("90+" if f >= 90 else "80-89" if f >= 80 else "70-79" if f >= 70
-               else "60-69" if f >= 60 else "50-59" if f >= 50 else "<50")
-        buckets[key] += 1
-    if not any(buckets.values()):
+        b[("90+" if f >= 90 else "80-89" if f >= 80 else "70-79" if f >= 70
+           else "60-69" if f >= 60 else "50-59" if f >= 50 else "<50")] += 1
+    if not any(b.values()):
         return '<p class="muted">No fit scores yet.</p>'
-    top = max(buckets.values()) or 1
-    out = []
-    for k, v in buckets.items():
-        out.append(f'<div class="bar"><span class="bl">{k}</span>'
-                   f'<span class="bt"><i style="width:{int(v / top * 100)}%"></i></span><span class="bv">{v}</span></div>')
-    return "".join(out)
+    top = max(b.values()) or 1
+    return "".join(
+        f'<div class="bar"><span class="bl">{k}</span>'
+        f'<span class="bt"><i style="width:{int(v / top * 100)}%"></i></span><span class="bv">{v}</span></div>'
+        for k, v in b.items())
 
 
 def _fitcls(f: int) -> str:
@@ -87,32 +113,51 @@ def _top_table(jobs: list[dict]) -> str:
     rows = []
     for j in top:
         f = int(j.get("fit_score") or 0)
-        star = "★" if j.get("in_bucket") else ""
         link = f'<a href="{_esc(j.get("url"))}" target="_blank" rel="noopener">open</a>' if j.get("url") else ""
         rows.append(f"<tr><td>{_esc(j.get('title'))}</td><td>{_esc(j.get('company'))}</td>"
-                    f"<td class='star'>{star}</td><td class='{_fitcls(f)}'>{f or ''}</td>"
+                    f"<td class='star'>{'★' if j.get('in_bucket') else ''}</td><td class='{_fitcls(f)}'>{f or ''}</td>"
                     f"<td>{_esc(j.get('status'))}</td><td>{link}</td></tr>")
     return ("<table><thead><tr><th>Title</th><th>Company</th><th>⭐</th><th>Fit</th>"
             f"<th>Status</th><th></th></tr></thead><tbody>{''.join(rows)}</tbody></table>")
 
 
-def _tailored_cards(jobs: list[dict]) -> str:
-    done = [j for j in jobs if j.get("status") == "tailored" or j.get("cv_path")]
-    done.sort(key=lambda j: -(int(j.get("fit_score") or 0)))
+def _kanban(jobs: list[dict]) -> str:
+    cols = [("shortlisted", "Shortlisted"), ("tailored", "Tailored"), ("applied", "Applied"),
+            ("interview", "Interview"), ("offer", "Offer"), ("rejected", "Rejected")]
+    out = []
+    for key, label in cols:
+        items = sorted([j for j in jobs if j.get("status") == key], key=lambda j: -(int(j.get("fit_score") or 0)))
+        cards = "".join(
+            f'<div class="kjob"><b>{_esc(j.get("title"))}</b>'
+            f'<div class="c">{("★ " if j.get("in_bucket") else "") + _esc(j.get("company"))} · fit {int(j.get("fit_score") or 0)}</div></div>'
+            for j in items) or '<div class="muted" style="font-size:12px">—</div>'
+        out.append(f'<div class="kcol"><h3>{label}<span>{len(items)}</span></h3>{cards}</div>')
+    return f'<div class="kan">{"".join(out)}</div>'
+
+
+def _tailored_cards(jobs: list[dict], blobmap: dict) -> str:
+    done = sorted([j for j in jobs if j.get("status") == "tailored" or j.get("cv_path")],
+                  key=lambda j: -(int(j.get("fit_score") or 0)))
     if not done:
         return '<p class="muted">No tailored CVs yet. The pipeline tailors the highest-fit jobs each run.</p>'
     cards = []
     for j in done:
         f = int(j.get("fit_score") or 0)
         star = '<span class="star">★ </span>' if j.get("in_bucket") else ""
-        link = f' &nbsp;·&nbsp; <a href="{_esc(j.get("url"))}" target="_blank" rel="noopener">job posting</a>' if j.get("url") else ""
-        reason = _esc(j.get("fit_reasoning") or "")
+        dl = blobmap.get(j.get("dedupe_key"), {})
+        links = []
+        if dl.get("cv"):
+            links.append(f'<a href="{dl["cv"]}" download>⬇ CV (.docx)</a>')
+        if dl.get("cover"):
+            links.append(f'<a href="{dl["cover"]}" download>⬇ Cover letter (.docx)</a>')
+        if j.get("url"):
+            links.append(f'<a href="{_esc(j.get("url"))}" target="_blank" rel="noopener">job posting</a>')
+        row = " &nbsp;·&nbsp; ".join(links) if links else "CV stored in the database; it will publish on the next run."
         cards.append(
             f'<div class="tcard"><div class="th">{star}{_esc(j.get("title"))} '
             f'<span class="muted">· {_esc(j.get("company"))}</span> <span class="{_fitcls(f)}">fit {f}</span></div>'
-            f'<div class="muted tr">{reason}</div>'
-            f'<div class="tmeta">CV + cover letter tailored ✓ — download from the local app or this run\'s '
-            f'Actions artifact (kept off the public page for privacy).{link}</div></div>')
+            f'<div class="muted tr">{_esc(j.get("fit_reasoning") or "")}</div>'
+            f'<div class="tmeta">{row}</div></div>')
     return "".join(cards)
 
 
@@ -121,23 +166,23 @@ def _runs_table(runs: list[dict]) -> str:
         return '<p class="muted">No runs logged yet.</p>'
     head = ("<tr><th>Run (UTC)</th><th>Mode</th><th>Disc.</th><th>Targets</th><th>Scored</th>"
             "<th>Tailored</th><th>New</th><th>Note</th></tr>")
-    body = []
-    for r in runs[:20]:
-        body.append(
-            f"<tr><td>{_esc(str(r.get('run_at',''))[:16].replace('T',' '))}</td><td>{_esc(r.get('mode'))}</td>"
-            f"<td>{_esc(r.get('discovered'))}</td><td>{_esc(r.get('targets'))}</td><td>{_esc(r.get('scored'))}</td>"
-            f"<td>{_esc(r.get('tailored'))}</td><td>{_esc(r.get('stored_new'))}</td>"
-            f"<td class='muted'>{_esc(r.get('llm_note',''))}</td></tr>")
-    return f"<table class='runs'><thead>{head}</thead><tbody>{''.join(body)}</tbody></table>"
+    body = "".join(
+        f"<tr><td>{_esc(str(r.get('run_at',''))[:16].replace('T',' '))}</td><td>{_esc(r.get('mode'))}</td>"
+        f"<td>{_esc(r.get('discovered'))}</td><td>{_esc(r.get('targets'))}</td><td>{_esc(r.get('scored'))}</td>"
+        f"<td>{_esc(r.get('tailored'))}</td><td>{_esc(r.get('stored_new'))}</td>"
+        f"<td class='muted'>{_esc(r.get('llm_note',''))}</td></tr>" for r in runs[:20])
+    return f"<table class='runs'><thead>{head}</thead><tbody>{body}</tbody></table>"
 
 
-def render(data: dict, note: str) -> str:
+def render(data: dict, note: str, blobmap: dict | None = None) -> str:
+    blobmap = blobmap or {}
     jobs = data["jobs"]
     total = len(jobs)
     bucket = sum(1 for j in jobs if j.get("in_bucket"))
     st = data["status"]
     applied = st.get("applied", 0) + st.get("interview", 0) + st.get("offer", 0)
     n_tailored = sum(1 for j in jobs if j.get("status") == "tailored" or j.get("cv_path"))
+    n_track = sum(1 for j in jobs if j.get("status") in ("shortlisted", "tailored", "applied", "interview", "offer", "rejected"))
     llm, scoring = data.get("llm", {}), data.get("scoring", {})
 
     rows = [{
@@ -182,8 +227,12 @@ th{{color:var(--mut);font-weight:600}}.runs td,.runs th{{white-space:nowrap}}
 select,input{{background:var(--card);border:1px solid var(--line);color:var(--tx);padding:7px 9px;border-radius:8px;font-size:13px}}
 .pill{{display:inline-block;padding:1px 8px;border-radius:20px;background:#1f2733;color:var(--mut);font-size:11px}}
 .fit{{font-weight:700}}.fit.hi{{color:#5ad19b}}.fit.mid{{color:#ffce6b}}
+.kan{{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px}}
+.kcol{{flex:1;min-width:155px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}}
+.kcol h3{{margin:0 0 8px;font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;display:flex;justify-content:space-between}}
+.kjob{{border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-bottom:7px;font-size:12px}}.kjob .c{{color:var(--mut);margin-top:2px}}
 .tcard{{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--card)}}
-.tcard .th{{font-weight:600;margin-bottom:4px}}.tcard .tr{{font-size:13px;margin-bottom:6px}}.tcard .tmeta{{font-size:12px;color:var(--mut)}}
+.tcard .th{{font-weight:600;margin-bottom:4px}}.tcard .tr{{font-size:13px;margin-bottom:6px}}.tcard .tmeta{{font-size:12px}}
 .foot{{color:var(--mut);font-size:12px;margin-top:24px}}code{{background:#1f2733;padding:1px 6px;border-radius:5px}}
 @media(max-width:760px){{.kpis{{grid-template-columns:repeat(2,1fr)}}.cols{{grid-template-columns:1fr}}}}
 </style></head><body><div class="wrap">
@@ -195,6 +244,7 @@ select,input{{background:var(--card);border:1px solid var(--line);color:var(--tx
 <div class="tabs">
 <button class="tab on" data-t="overview">Overview</button>
 <button class="tab" data-t="jobs">Jobs<span class="b">{total}</span></button>
+<button class="tab" data-t="tracker">Tracker<span class="b">{n_track}</span></button>
 <button class="tab" data-t="tailored">Tailored<span class="b">{n_tailored}</span></button>
 <button class="tab" data-t="pipeline">Pipeline &amp; LLM</button>
 </div>
@@ -222,8 +272,13 @@ select,input{{background:var(--card);border:1px solid var(--line);color:var(--tx
   </tr></thead><tbody id="tb"></tbody></table></div>
 </section>
 
+<section class="panel" id="p-tracker">
+  <p class="muted" style="margin-top:0">Your application pipeline. Read-only here — edit statuses in the local app.</p>
+  {_kanban(jobs)}
+</section>
+
 <section class="panel" id="p-tailored">
-  <div class="card"><h2>Tailored CVs &amp; cover letters</h2>{_tailored_cards(jobs)}</div>
+  <div class="card"><h2>Tailored CVs &amp; cover letters</h2>{_tailored_cards(jobs, blobmap)}</div>
 </section>
 
 <section class="panel" id="p-pipeline">
@@ -238,7 +293,7 @@ select,input{{background:var(--card);border:1px solid var(--line);color:var(--tx
 </section>
 
 <p class="foot">Read-only snapshot from Supabase, republished every 6 hours by GitHub Actions.
-To edit statuses, add jobs, download tailored CVs, or trigger a run, launch the interactive app locally:
+To edit statuses, add jobs, or trigger a run, launch the interactive app locally:
 <code>python -m streamlit run app/dashboard.py</code></p>
 </div>
 <script>
@@ -268,15 +323,16 @@ document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{{
 
 def main() -> None:
     OUT.mkdir(exist_ok=True)
-    note = ""
+    note, blobmap = "", {}
     try:
         data = _gather()
+        blobmap = _write_cvs(data.get("blobs", []), OUT / "cvs")
     except Exception as exc:  # ConfigError / connection issue -> still publish a page
-        data = {"jobs": [], "runs": [], "status": {}, "source": {}, "llm": {}, "scoring": {}}
+        data = {"jobs": [], "runs": [], "status": {}, "source": {}, "blobs": [], "llm": {}, "scoring": {}}
         note = f"Database not reachable yet ({type(exc).__name__}). Fix SUPABASE_DB_URL and the next run will populate this."
-    (OUT / "index.html").write_text(render(data, note), encoding="utf-8")
+    (OUT / "index.html").write_text(render(data, note, blobmap), encoding="utf-8")
     (OUT / ".nojekyll").write_text("", encoding="utf-8")
-    print(f"Wrote {OUT / 'index.html'} with {len(data['jobs'])} jobs; note={note or 'none'}")
+    print(f"Wrote {OUT / 'index.html'} with {len(data['jobs'])} jobs, {len(blobmap)} downloadable CVs; note={note or 'none'}")
 
 
 if __name__ == "__main__":

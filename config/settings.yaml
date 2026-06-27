@@ -46,6 +46,12 @@ seniority:
     - "vice president"
     - "chief"
     - "manager"
+    - "trainee"                   # training-course adverts, not real hiring
+  exclude_company:               # bootcamp / "career switch" course advertisers, not DS employers
+    - "IT Career Switch"
+    - "Career Switch"
+    - "Nuyew"
+    - "KnowledgeHut"
 
 scoring:
   tailor_threshold: 70           # only tailor a CV when fit score >= this (saves tokens)

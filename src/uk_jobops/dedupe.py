@@ -22,12 +22,13 @@ def dedupe(jobs: list[Job]) -> list[Job]:
         for i, k in enumerate(kept):
             if _norm(job.company) != _norm(k.company):
                 continue
-            same_loc = _norm(job.location).split(",")[0] == _norm(k.location).split(",")[0]
             if fuzz is None:
                 title_match = _norm(job.title) == _norm(k.title)
             else:
                 title_match = fuzz.token_sort_ratio(job.title, k.title) >= 90
-            if title_match and (same_loc or not job.location or not k.location):
+            # same employer + same role = duplicate, regardless of location
+            # (national reposts list one job under many towns)
+            if title_match:
                 match_idx = i
                 break
         if match_idx >= 0:
