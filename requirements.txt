@@ -12,5 +12,9 @@ openpyxl>=3.1              # read the company bucket-list .xlsx
 google-genai>=0.3           # Gemini (primary, current SDK)
 groq>=0.9                   # Groq Llama-3.3-70B (critic / fallback)
 
+# Dashboard (also what Streamlit Community Cloud installs from this file)
+streamlit>=1.36
+pandas>=2.0
+
 # Optional extras (only if you enable them)
 # playwright>=1.44          # JS career-page fallback  (run: playwright install chromium)

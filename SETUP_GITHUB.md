@@ -66,26 +66,23 @@ git push
 3. Watch the run; when green, open it and download the **jobops-output** artifact (digest + any tailored CVs).
 4. After that, it runs automatically every 6 hours. New jobs and run history appear in the dashboard.
 
-## 4. Turn on the live dashboard (GitHub Pages)
+## 4. Deploy the dashboard (Streamlit Community Cloud)
 
-After every run the workflow builds a static dashboard and publishes it to GitHub Pages.
-Enable it once:
+The interactive dashboard — editable tracker, add-job, CV/cover-letter downloads, run-now —
+deploys free and reads the same Supabase database the pipeline writes to:
 
-1. Repo → **Settings → Pages** → under **Build and deployment**, set **Source: GitHub Actions**.
-2. Run the workflow once (step 3). The **deploy** job prints the URL; it also shows at Settings → Pages:
+1. Go to https://share.streamlit.io and sign in with GitHub.
+2. **Create app → Deploy a public app from GitHub** → repo `MLLM_AI_Career_Assistant`,
+   branch `main`, **Main file path** `app/dashboard.py`.
+3. **Advanced settings → Secrets** → paste your database URL:
 
    ```
-   https://<your-username>.github.io/MLLM_AI_Career_Assistant/
+   SUPABASE_DB_URL = "postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres"
    ```
 
-3. Open it anytime — it refreshes every 6 hours with new jobs, fit scores and run history.
-   (Even if a run fails on a bad secret, the page still publishes with a note telling you what to fix.)
+4. **Deploy.** You get a `https://<app-name>.streamlit.app` URL with everything working —
+   editable tracker, CV downloads, add-job and the Run-pipeline button.
 
-The Pages dashboard is **read-only** (KPIs, jobs, scores, sources, run history, searchable job table).
-To **edit** statuses/notes, **add** a job, or **run** the pipeline from a button, launch the interactive
-app locally — it writes back to the same Supabase database:
-
-```bash
-pip install -r requirements-dashboard.txt
-python -m streamlit run app/dashboard.py
-```
+Notes: the app is public (anyone with the link) and may sleep after long inactivity, waking on
+the next visit. Dependencies install from `requirements.txt` (now includes streamlit + pandas).
+To run it locally instead: `python -m streamlit run app/dashboard.py`.

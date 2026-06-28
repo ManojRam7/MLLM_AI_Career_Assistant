@@ -36,22 +36,29 @@ class Job:
     is_custom: bool = False      # manually added by the user
     in_bucket: bool = False      # company is on the bucket list (gets priority)
     notes: str = ""              # free-text tracker notes
+    locations: str = ""          # every location this same role was seen in (aggregated)
     cv_path: str = ""
     cover_path: str = ""
     gaps: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
 
+    def _desc_sig(self) -> str:
+        d = _norm(self.description)
+        return d[:300] if d else _norm(self.location)
+
     def make_key(self) -> str:
-        # identity = title + company only. Location is deliberately excluded so the
-        # same role advertised across many towns collapses to ONE row (and is scored
-        # once), instead of a new row per location on every run.
-        base = "|".join([_norm(self.title), _norm(self.company)])
+        # identity = title + company + a description signature. The SAME job reposted
+        # across many towns shares a description, so it collapses to ONE row (scored
+        # once); DIFFERENT roles from the same employer have different descriptions and
+        # stay separate. Locations are aggregated into the `locations` field.
+        base = "|".join([_norm(self.title), _norm(self.company), self._desc_sig()])
         return hashlib.sha256(base.encode("utf-8")).hexdigest()[:24]
 
     def finalize(self) -> "Job":
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         self.fetched_at = self.fetched_at or now
         self.first_seen_at = self.first_seen_at or now
+        self.locations = self.locations or self.location
         self.dedupe_key = self.dedupe_key or self.make_key()
         return self
 

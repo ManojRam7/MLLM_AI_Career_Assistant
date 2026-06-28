@@ -47,6 +47,8 @@ def load_jobs(url: str) -> pd.DataFrame:
     df = pd.DataFrame(get_store(url).all_jobs())
     if not df.empty:
         df["notes"] = df["notes"].fillna("")
+        if "locations" in df:
+            df["locations"] = df["locations"].fillna("")
         df["fit_score"] = df["fit_score"].fillna(0).astype(int)
     return df
 
@@ -215,13 +217,15 @@ with tab_tracker:
         view = view[view["fit_score"] >= min_fit].reset_index(drop=True)
         st.caption(f"{len(view)} jobs. Edit **status** and **notes**, then Save.")
 
-        cols = ["title", "company", "source", "in_bucket", "fit_score", "status", "notes", "url"]
+        cols = ["title", "company", "locations", "source", "in_bucket", "fit_score", "status", "notes", "url"]
+        cols = [c for c in cols if c in view.columns]
         edited = st.data_editor(
             view[cols], hide_index=True, use_container_width=True, num_rows="fixed", key="tracker",
-            disabled=["title", "company", "source", "in_bucket", "fit_score", "url"],
+            disabled=[c for c in cols if c not in ("status", "notes")],
             column_config={
                 "status": st.column_config.SelectboxColumn("status", options=STATUSES, width="small"),
                 "in_bucket": st.column_config.CheckboxColumn("⭐"),
+                "locations": st.column_config.TextColumn("locations", width="medium"),
                 "fit_score": st.column_config.NumberColumn("fit", format="%d", width="small"),
                 "url": st.column_config.LinkColumn("link", display_text="open"),
                 "notes": st.column_config.TextColumn("notes", width="large")})

@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     is_custom    BOOLEAN DEFAULT FALSE,
     in_bucket    BOOLEAN DEFAULT FALSE,
     notes        TEXT DEFAULT '',
+    locations    TEXT DEFAULT '',
     applied_at   TEXT DEFAULT '',
     cv_path      TEXT,
     cover_path   TEXT,
@@ -46,6 +47,7 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS applied_at TEXT DEFAULT '';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cv_blob BYTEA;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cover_blob BYTEA;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS locations TEXT DEFAULT '';
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_fit_idx ON jobs(fit_score DESC);
 
@@ -60,14 +62,16 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 """
 
 UPSERT = """
-INSERT INTO jobs (dedupe_key,title,company,location,url,description,posted_date,salary,remote,
+INSERT INTO jobs (dedupe_key,title,company,location,locations,url,description,posted_date,salary,remote,
                   source,source_query,seniority,is_target,in_bucket,first_seen_at,last_seen_at,is_custom,status)
-VALUES (%(dedupe_key)s,%(title)s,%(company)s,%(location)s,%(url)s,%(description)s,%(posted_date)s,
+VALUES (%(dedupe_key)s,%(title)s,%(company)s,%(location)s,%(locations)s,%(url)s,%(description)s,%(posted_date)s,
         %(salary)s,%(remote)s,%(source)s,%(source_query)s,%(seniority)s,%(is_target)s,%(in_bucket)s,
         %(first_seen_at)s,%(last_seen_at)s,%(is_custom)s,%(status)s)
 ON CONFLICT (dedupe_key) DO UPDATE SET
     last_seen_at = EXCLUDED.last_seen_at,
     in_bucket = jobs.in_bucket OR EXCLUDED.in_bucket,
+    locations = CASE WHEN length(COALESCE(EXCLUDED.locations,'')) > length(COALESCE(jobs.locations,''))
+                     THEN EXCLUDED.locations ELSE jobs.locations END,
     url = COALESCE(NULLIF(EXCLUDED.url,''), jobs.url),
     description = COALESCE(NULLIF(EXCLUDED.description,''), jobs.description)
 RETURNING (xmax = 0) AS inserted;
@@ -140,21 +144,33 @@ class Store:
                  summary.get("rejected"), summary.get("scored"), summary.get("tailored"),
                  summary.get("stored_new"), summary.get("llm_note", "")))
 
-    def dedupe_existing(self) -> int:
-        """Collapse rows that are the same (title, company), keeping the most-progressed
-        one (advanced status, then a tailored CV, then highest fit, then most recent).
-        Cleans up legacy cross-location duplicates from before identity dropped location."""
-        sql = """
-        DELETE FROM jobs WHERE dedupe_key IN (
-          SELECT dedupe_key FROM (
-            SELECT dedupe_key, row_number() OVER (
-              PARTITION BY lower(btrim(title)), lower(btrim(company))
-              ORDER BY CASE status WHEN 'offer' THEN 6 WHEN 'interview' THEN 5 WHEN 'applied' THEN 4
-                       WHEN 'tailored' THEN 3 WHEN 'shortlisted' THEN 2 WHEN 'scored' THEN 1 ELSE 0 END DESC,
-                       (cv_blob IS NOT NULL) DESC, fit_score DESC, last_seen_at DESC
-            ) AS rn FROM jobs
-          ) t WHERE t.rn > 1
-        )"""
+    def collapse_location_dupes(self) -> int:
+        """Collapse rows that are the SAME job - title + company + description signature -
+        seen across multiple locations: aggregate every location into the kept row's
+        `locations`, then delete the extras (keeping the most-progressed row). Different
+        descriptions = different roles, kept separate. Skips manually-added jobs."""
+        grp = "lower(btrim(title))||'|'||lower(btrim(company))||'|'||left(lower(coalesce(description,'')),300)"
+        order = ("CASE status WHEN 'offer' THEN 6 WHEN 'interview' THEN 5 WHEN 'applied' THEN 4 "
+                 "WHEN 'tailored' THEN 3 WHEN 'shortlisted' THEN 2 WHEN 'scored' THEN 1 ELSE 0 END DESC, "
+                 "(cv_blob IS NOT NULL) DESC, fit_score DESC, last_seen_at DESC")
+        sql = f"""
+        WITH g AS (
+          SELECT dedupe_key, {grp} AS gk,
+                 row_number() OVER (PARTITION BY {grp} ORDER BY {order}) AS rn
+          FROM jobs WHERE is_custom = FALSE
+        ), locs AS (
+          SELECT {grp} AS gk, string_agg(DISTINCT NULLIF(btrim(location),''), ', ') AS all_locs
+          FROM jobs WHERE is_custom = FALSE GROUP BY {grp}
+        )
+        UPDATE jobs j SET locations = locs.all_locs
+        FROM g JOIN locs USING (gk)
+        WHERE j.dedupe_key = g.dedupe_key AND g.rn = 1 AND COALESCE(locs.all_locs,'') <> '';
+        WITH g AS (
+          SELECT dedupe_key, row_number() OVER (PARTITION BY {grp} ORDER BY {order}) AS rn
+          FROM jobs WHERE is_custom = FALSE
+        )
+        DELETE FROM jobs WHERE dedupe_key IN (SELECT dedupe_key FROM g WHERE rn > 1);
+        """
         with self.conn.cursor() as cur:
             cur.execute(sql)
             return cur.rowcount
@@ -191,9 +207,11 @@ class Store:
             "ORDER BY in_bucket DESC LIMIT %s", (limit,))
 
     def jobs_to_tailor(self, threshold: int, limit: int = 6) -> list[dict[str, Any]]:
+        # cv_blob IS NULL also re-tailors older jobs whose file bytes were never stored,
+        # backfilling downloadable CVs without re-scoring them.
         return self._rows(
             "SELECT dedupe_key,title,company,location,description FROM jobs "
-            "WHERE (cv_path IS NULL OR cv_path='') AND is_target=TRUE "
+            "WHERE cv_blob IS NULL AND is_target=TRUE "
             "AND (fit_score >= %s OR is_custom=TRUE) "
             "ORDER BY in_bucket DESC, fit_score DESC LIMIT %s", (threshold, limit))
 
@@ -204,7 +222,7 @@ class Store:
 
     def all_jobs(self, limit: int = 2000) -> list[dict[str, Any]]:
         return self._rows(
-            "SELECT dedupe_key,title,company,location,source,in_bucket,fit_score,seniority,status,"
+            "SELECT dedupe_key,title,company,location,locations,source,in_bucket,fit_score,seniority,status,"
             "notes,applied_at,url,cv_path,cover_path,fit_reasoning,ghost_flag,posted_date,first_seen_at "
             "FROM jobs ORDER BY in_bucket DESC, fit_score DESC, first_seen_at DESC LIMIT %s", (limit,))
 
