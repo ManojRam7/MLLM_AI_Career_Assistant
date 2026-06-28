@@ -102,7 +102,7 @@ class Pipeline:
 
             from .cv.render_docx import render
             from .llm.client import LLM, LLMError
-            from .llm.fit_score import score_fit
+            from .llm.fit_score import score_fit, score_fit_batch
             from .llm.tailor import tailor
 
             llm = LLM(self.cfg)
@@ -115,20 +115,40 @@ class Pipeline:
                 m = str(exc).lower()
                 return "429" in m or "rate limit" in m or "quota" in m or "resource_exhausted" in m
 
-            for job in store.jobs_needing_score(limit=scoring.get("max_score_per_run", 40)):
+            # Batch-score many jobs per LLM call (far fewer calls + tokens => stays inside
+            # free-tier rate limits and clears the backlog faster).
+            shortlist_th = scoring.get("shortlist_threshold", 60)
+            to_score = store.jobs_needing_score(limit=scoring.get("max_score_per_run", 40))
+            bsize = max(1, int(scoring.get("score_batch_size", 8)))
+            for start in range(0, len(to_score), bsize):
+                chunk = to_score[start:start + bsize]
                 try:
-                    fit = score_fit(llm, self.cfg.base_cv, job)
+                    results = score_fit_batch(llm, self.cfg.base_cv, chunk)
                 except LLMError as exc:
                     errors.append(str(exc)[:140])
                     if _rate_limited(exc):
                         summary["llm_note"] = "Rate limit during scoring; remaining jobs continue next run."
                         llm_exhausted = True
                         break
-                    continue
-                status = "shortlisted" if fit.score >= scoring.get("shortlist_threshold", 60) else "scored"
-                store.update(job["dedupe_key"], fit_score=fit.score, fit_reasoning=fit.reasoning,
-                             ghost_flag=fit.ghost_flag, status=status, gaps=fit.gaps)
-                summary["scored"] += 1
+                    # malformed batch JSON: fall back to scoring this chunk one by one
+                    results = {}
+                    for idx, job in enumerate(chunk):
+                        try:
+                            results[idx] = score_fit(llm, self.cfg.base_cv, job)
+                        except LLMError as exc2:
+                            if _rate_limited(exc2):
+                                llm_exhausted = True
+                                break
+                for idx, job in enumerate(chunk):
+                    fit = results.get(idx)
+                    if fit is None:
+                        continue
+                    status = "shortlisted" if fit.score >= shortlist_th else "scored"
+                    store.update(job["dedupe_key"], fit_score=fit.score, fit_reasoning=fit.reasoning,
+                                 ghost_flag=fit.ghost_flag, status=status, gaps=fit.gaps)
+                    summary["scored"] += 1
+                if llm_exhausted:
+                    break
                 time.sleep(delay)
 
             # if scoring already exhausted the quota, don't waste a call on tailoring

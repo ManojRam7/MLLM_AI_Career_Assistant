@@ -57,6 +57,7 @@ scoring:
   tailor_threshold: 70           # only tailor a CV when fit score >= this (saves tokens)
   shortlist_threshold: 60
   max_score_per_run: 40          # cap LLM fit-scoring per run (keeps within free tiers)
+  score_batch_size: 8            # jobs scored per LLM call (fewer calls + tokens; clears backlog faster)
   max_tailor_per_run: 6          # cap CV tailoring per run; the backlog clears over runs
 
 sources:

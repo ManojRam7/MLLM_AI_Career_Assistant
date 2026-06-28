@@ -53,6 +53,7 @@ def load_jobs(url: str) -> pd.DataFrame:
     blank = pd.Series([""] * n, index=df.index)
     df["notes"] = df["notes"].fillna("")
     df["fit_score"] = df["fit_score"].fillna(0).astype(int)
+    df["fit"] = df["fit_score"].where(df["status"] != "new")  # blank for not-yet-scored jobs
     # locations = aggregated towns, falling back to the single location until the
     # next pipeline run populates the aggregate
     agg = (df["locations"] if "locations" in df else blank).fillna("").astype(str)
@@ -135,7 +136,7 @@ with tab_overview:
             st.bar_chart(bins.value_counts().sort_index())
 
         st.subheader("Top matches")
-        top_cols = ["new", "title", "company", "locations", "fit_score", "in_bucket", "status", "posted", "fetched", "url"]
+        top_cols = ["new", "title", "company", "locations", "fit", "in_bucket", "status", "posted", "fetched", "url"]
         top = jobs[jobs["fit_score"] >= 70].head(15)
         top = top[[c for c in top_cols if c in top.columns]]
         st.dataframe(top, hide_index=True, use_container_width=True,
@@ -145,7 +146,7 @@ with tab_overview:
                                     "locations": st.column_config.TextColumn("locations"),
                                     "posted": st.column_config.TextColumn("posted"),
                                     "fetched": st.column_config.TextColumn("fetched (UTC)"),
-                                    "fit_score": st.column_config.NumberColumn("fit", format="%d")})
+                                    "fit": st.column_config.NumberColumn("fit", format="%d")})
 
 # ---------------------------------------------------------- PIPELINE & LLMs
 with tab_pipeline:
@@ -237,7 +238,7 @@ with tab_tracker:
         st.caption(f"{len(view)} jobs. Edit **status** and **notes**, then Save.")
 
         cols = ["new", "title", "company", "locations", "posted", "fetched", "source",
-                "in_bucket", "fit_score", "status", "notes", "url"]
+                "in_bucket", "fit", "status", "notes", "url"]
         cols = [c for c in cols if c in view.columns]
         edited = st.data_editor(
             view[cols], hide_index=True, use_container_width=True, num_rows="fixed", key="tracker",
@@ -249,7 +250,7 @@ with tab_tracker:
                 "locations": st.column_config.TextColumn("locations", width="medium"),
                 "posted": st.column_config.TextColumn("posted", width="small"),
                 "fetched": st.column_config.TextColumn("fetched (UTC)", width="small"),
-                "fit_score": st.column_config.NumberColumn("fit", format="%d", width="small"),
+                "fit": st.column_config.NumberColumn("fit", format="%d", width="small"),
                 "url": st.column_config.LinkColumn("link", display_text="open"),
                 "notes": st.column_config.TextColumn("notes", width="large")})
 
