@@ -20,9 +20,9 @@ search:
     - "AI engineer"
   locations: ["United Kingdom", "London", "Birmingham", "Manchester", "Edinburgh",
               "Glasgow", "Leeds", "Bristol", "Remote UK"]
-  recency_days_recurring: 1      # each 6h run looks at the last day
-  recency_days_first: 14         # first run backfills 2 weeks
-  max_per_source: 100
+  recency_days_recurring: 7      # rolling week window so nothing recent is missed between runs
+  recency_days_first: 21         # first run backfills 3 weeks
+  max_per_source: 200            # pull deeper from each free API (Reed/Adzuna)
   require_bucket: false           # strict: keep ONLY jobs from your 750 target companies (max focus)
 
 seniority:
@@ -87,7 +87,7 @@ seniority:
 scoring:
   tailor_threshold: 70           # only tailor a CV when fit score >= this (saves tokens)
   shortlist_threshold: 60
-  max_score_per_run: 40          # cap LLM fit-scoring per run (keeps within free tiers)
+  max_score_per_run: 120         # DeepSeek is cheap + batched, so score a big backlog each run
   score_batch_size: 8            # jobs scored per LLM call (fewer calls + tokens; clears backlog faster)
   max_tailor_per_run: 6          # cap CV tailoring per run; the backlog clears over runs
 
@@ -104,13 +104,17 @@ sources:
   apify:                         # Google Jobs via Apify (LinkedIn/Indeed/Glassdoor/Totaljobs/CV-Library/NHS/gov)
     enabled: true
     actor: "johnvc~google-jobs-scraper"
-    top_companies_per_run: 6     # rotating sample of top-100 target companies searched each run
-    num_results: 80
-    max_queries: 10              # extra + generic + company queries, capped for cost/time
-    extra_queries:               # always-run, high-value searches that Reed/Adzuna miss
+    top_companies_per_run: 8     # rotating sample of top-100 target companies searched each run
+    num_results: 120             # deep pagination so more of the market is captured
+    max_queries: 16              # extra + generic + company queries, capped for cost/time
+    extra_queries:               # always-run broad + government searches Reed/Adzuna miss
+      - "data scientist United Kingdom"
+      - "machine learning engineer United Kingdom"
       - "data scientist NHS"
-      - "data scientist civil service UK"
+      - "data scientist civil service"
       - "data scientist UK government"
+      - "data analyst civil service"
+      - "AI engineer United Kingdom"
   serpapi: { enabled: false }    # paid
 
 bucket_list:

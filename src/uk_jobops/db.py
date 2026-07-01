@@ -63,8 +63,10 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     mode        TEXT,
     discovered  INTEGER, targets INTEGER, rejected INTEGER,
     scored      INTEGER, tailored INTEGER, stored_new INTEGER,
-    llm_note    TEXT
+    llm_note    TEXT,
+    summary_json JSONB
 );
+ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS summary_json JSONB;
 """
 
 UPSERT = """
@@ -133,6 +135,12 @@ class Store:
         with self.conn.cursor() as cur:
             cur.execute("UPDATE jobs SET tracked=%s WHERE dedupe_key = ANY(%s)", (tracked, list(keys)))
 
+    def delete_jobs(self, keys: list[str]) -> None:
+        if not keys:
+            return
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM jobs WHERE dedupe_key = ANY(%s)", (list(keys),))
+
     def update(self, dedupe_key: str, **fields: Any) -> None:
         if not fields:
             return
@@ -164,11 +172,11 @@ class Store:
     def log_run(self, summary: dict[str, Any]) -> None:
         with self.conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO pipeline_runs (run_at,mode,discovered,targets,rejected,scored,tailored,stored_new,llm_note)"
-                " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "INSERT INTO pipeline_runs (run_at,mode,discovered,targets,rejected,scored,tailored,"
+                "stored_new,llm_note,summary_json) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (_now(), summary.get("mode"), summary.get("discovered"), summary.get("targets"),
                  summary.get("rejected"), summary.get("scored"), summary.get("tailored"),
-                 summary.get("stored_new"), summary.get("llm_note", "")))
+                 summary.get("stored_new"), summary.get("llm_note", ""), json.dumps(summary, default=str)))
 
     def purge_excluded(self, exclude_title: list[str], exclude_company: list[str],
                        exclude_recruiters: bool = True) -> int:
@@ -222,7 +230,7 @@ class Store:
     def all_jobs(self, limit: int = 2000) -> list[dict[str, Any]]:
         return self._rows(
             "SELECT dedupe_key,title,company,location,locations,source,in_bucket,bucket_tier,fit_score,seniority,status,"
-            "tracked,notes,applied_at,url,cv_path,cover_path,fit_reasoning,ghost_flag,posted_date,first_seen_at "
+            "tracked,is_custom,notes,applied_at,url,cv_path,cover_path,fit_reasoning,ghost_flag,posted_date,first_seen_at "
             "FROM jobs ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, fit_score DESC, first_seen_at DESC LIMIT %s",
             (limit,))
 

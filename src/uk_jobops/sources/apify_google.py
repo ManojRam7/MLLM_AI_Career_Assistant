@@ -58,7 +58,8 @@ class ApifyGoogleSource(Source):
         import requests
 
         body = {"query": query, "location": "United Kingdom", "country": "uk",
-                "google_domain": "google.co.uk", "num_results": self.num_results, "max_pagination": 2}
+                "google_domain": "google.co.uk", "num_results": self.num_results,
+                "max_pagination": max(3, self.num_results // 10)}
         url = ENDPOINT.format(actor=self.actor)
         for token in self.tokens:
             try:

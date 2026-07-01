@@ -20,7 +20,7 @@ from uk_jobops.config import load_config            # noqa: E402
 from uk_jobops.db import Store                       # noqa: E402
 
 STATUSES = ["new", "scored", "shortlisted", "tailored", "applied", "assessment",
-            "interview", "offer", "rejected"]
+            "assessment_cleared", "interview", "offer", "rejected"]
 
 st.set_page_config(page_title="Job Search Assistant", page_icon="🧭", layout="wide")
 
@@ -53,11 +53,13 @@ def load_jobs(url: str) -> pd.DataFrame:
     n = len(df)
     blank = pd.Series([""] * n, index=df.index)
     # resilient to schema drift: guarantee every column the UI reads exists
-    for _col, _def in (("tracked", False), ("in_bucket", False), ("bucket_tier", ""), ("notes", ""),
-                       ("source", ""), ("status", "new"), ("url", ""), ("cv_path", ""), ("fit_reasoning", "")):
+    for _col, _def in (("tracked", False), ("is_custom", False), ("in_bucket", False), ("bucket_tier", ""),
+                       ("notes", ""), ("source", ""), ("status", "new"), ("url", ""), ("cv_path", ""),
+                       ("fit_reasoning", "")):
         if _col not in df.columns:
             df[_col] = _def
     df["tracked"] = df["tracked"].fillna(False).astype(bool)
+    df["is_custom"] = df["is_custom"].fillna(False).astype(bool)
     df["notes"] = df["notes"].fillna("")
     df["fit_score"] = df["fit_score"].fillna(0).astype(int)
     df["fit"] = df["fit_score"].where(df["status"] != "new")  # blank for not-yet-scored jobs
@@ -158,34 +160,6 @@ with tab_overview:
 # ---------------------------------------------------------- PIPELINE & LLMs
 with tab_pipeline:
     import json as _json
-    import subprocess
-    import sys as _sys
-
-    st.subheader("Run the pipeline")
-    _sec = cfg.secrets
-    _can_run = bool(_sec.reed_api_key or (_sec.adzuna_app_id and _sec.adzuna_app_key))
-    rc1, rc2 = st.columns([1, 3])
-    mode = rc1.selectbox("Mode", ["recurring", "first"],
-                         help="'first' backfills 2 weeks; 'recurring' looks at the last day")
-    if not _can_run:
-        rc2.info("Job-source API keys aren't set in this hosted app, so running here fetches nothing. "
-                 "Trigger runs from GitHub Actions (or locally) instead.")
-    if _can_run and rc2.button("▶️ Run pipeline now", type="primary"):
-        with st.status("Running pipeline (this can take a few minutes)...", expanded=True) as status:
-            try:
-                proc = subprocess.run([_sys.executable, "scripts/run_pipeline.py", "--mode", mode],
-                                      cwd=str(ROOT), capture_output=True, text=True, timeout=1800)
-                st.code((proc.stdout or "")[-4000:] or (proc.stderr or "")[-2000:] or "(no output)")
-                status.update(label="Pipeline finished", state="complete")
-            except Exception as exc:  # noqa: BLE001
-                st.error(f"Run failed: {exc}")
-                status.update(label="Run failed", state="error")
-        st.cache_data.clear()
-    last_run = ROOT / "output" / "last_run.json"
-    if last_run.exists():
-        with st.expander("Last run summary"):
-            st.json(_json.loads(last_run.read_text(encoding="utf-8")))
-    st.divider()
 
     llm = cfg.settings.get("llm", {})
     scoring = cfg.settings.get("scoring", {})
@@ -217,14 +191,49 @@ with tab_pipeline:
                "job-source keys live in GitHub Actions, where the pipeline actually runs — so the "
                "other lights being grey here is normal.")
 
-    st.subheader("Recent pipeline runs")
+    st.subheader("Run logs")
+    st.caption("Every run, with where the jobs came from. Times are your local timezone.")
     runs = load_runs(url)
     if runs.empty:
         st.info("No runs logged yet. The pipeline records each run here automatically.")
     else:
-        show = runs[["run_at", "mode", "discovered", "targets", "scored", "tailored", "stored_new", "llm_note"]]
-        st.dataframe(show, hide_index=True, width="stretch")
-        st.line_chart(runs.set_index("run_at")[["discovered", "targets", "scored"]].iloc[::-1])
+        import datetime as _dt2
+
+        def _local(ts):
+            try:
+                return _dt2.datetime.fromisoformat(str(ts)).astimezone().strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                return str(ts)[:16].replace("T", " ")
+
+        def _sj(r):
+            raw = r.get("summary_json")
+            if isinstance(raw, dict):
+                return raw
+            try:
+                return _json.loads(raw) if raw else {}
+            except Exception:
+                return {}
+
+        disp = []
+        for _, r in runs.iterrows():
+            sj = _sj(r)
+            sc = {s.get("source", "?"): s.get("count", 0) for s in sj.get("sources", [])}
+            google = next((v for k, v in sc.items() if "Google" in k), 0)
+            ats = next((v for k, v in sc.items() if "ATS" in k), 0)
+            disp.append({
+                "run": _local(r.get("run_at")), "mode": r.get("mode"),
+                "found": r.get("discovered"), "new": r.get("stored_new"),
+                "Reed": sc.get("Reed", 0), "Adzuna": sc.get("Adzuna", 0), "Google": google, "ATS": ats,
+                "🎯 companies": sj.get("companies_searched", 0), "⭐ bucket": sj.get("bucket_matches", 0),
+                "scored": r.get("scored"), "tailored": r.get("tailored"),
+                "note": r.get("llm_note") or (sj.get("telegram", "") or ""),
+            })
+        st.dataframe(pd.DataFrame(disp), hide_index=True, width="stretch", height=430)
+        latest = _sj(runs.iloc[0])
+        if latest:
+            with st.expander("🔎 Latest run — full detail (every field)"):
+                st.json(latest)
+        st.line_chart(runs.set_index("run_at")[["discovered", "scored", "tailored"]].iloc[::-1])
 
 # ----------------------------------------------------------------- LIVE JOBS
 with tab_tracker:
@@ -240,7 +249,7 @@ with tab_tracker:
         query = f4.text_input("Search title / company")
         min_fit = st.slider("Minimum fit score", 0, 100, 0, 5)
 
-        view = jobs.copy()
+        view = jobs[~jobs["is_custom"]].copy()   # manual jobs live only in the Tracker
         if pick:
             view = view[view["status"].isin(pick)]
         if srcs:
@@ -288,10 +297,10 @@ with tab_tracker:
             st.success(f"Saved {n} change(s).")
             st.rerun()
 
-# --------------------------------------------------------------- TRACKER
+# --------------------------------------------------------------- TRACKER (KANBAN)
 with tab_board:
-    st.subheader("Application tracker")
-    st.caption("The jobs you're actively pursuing. Add them below, then manage each one's stage.")
+    st.subheader("📋 Application tracker")
+    st.caption("Move jobs through your pipeline — change a card's stage, tick 🗑 to delete, then **Save board**.")
     ca, cb = st.columns(2)
     with ca.expander("➕ Add a job manually"):
         with st.form("add_manual", clear_on_submit=True):
@@ -300,68 +309,80 @@ with tab_board:
             _c = m2.text_input("Company *")
             _u = st.text_input("Job URL")
             _l = st.text_input("Location", value="United Kingdom")
-            _d = st.text_area("Job description", height=100)
+            _d = st.text_area("Job description", height=90)
             if st.form_submit_button("Add to tracker", type="primary"):
                 if not _t or not _c:
                     st.warning("Title and company are required.")
                 else:
                     get_store(url).add_custom_job(title=_t, company=_c, url=_u, location=_l, description=_d)
                     st.cache_data.clear()
-                    st.success(f"Added '{_t}' to the tracker.")
+                    st.success(f"Added '{_t}'.")
                     st.rerun()
-    with cb.expander("📥 Add from fetched jobs"):
+    with cb.expander("📥 Add from fetched jobs (from Live Jobs)"):
         if jobs.empty:
             st.caption("No fetched jobs yet.")
         else:
-            pool = jobs[~jobs["tracked"].fillna(False).astype(bool)].sort_values("fit_score", ascending=False)
+            pool = jobs[(~jobs["tracked"]) & (~jobs["is_custom"])].sort_values("fit_score", ascending=False)
             labels = {f"{r['title']} · {r['company']} (fit {int(r.get('fit_score') or 0)})": r["dedupe_key"]
-                      for _, r in pool.head(300).iterrows()}
+                      for _, r in pool.head(400).iterrows()}
             chosen = st.multiselect("Pick jobs to track", list(labels.keys()))
             if st.button("Add selected", type="primary", disabled=not chosen):
                 get_store(url).set_tracked([labels[c] for c in chosen], True)
                 st.cache_data.clear()
-                st.success(f"Added {len(chosen)} job(s) to the tracker.")
+                st.success(f"Added {len(chosen)} job(s).")
                 st.rerun()
 
     st.divider()
-    tracked = (jobs[jobs["tracked"].fillna(False).astype(bool)]
-               if not jobs.empty and "tracked" in jobs else jobs.iloc[0:0])
+    tracked = jobs[jobs["tracked"]] if not jobs.empty else jobs.iloc[0:0]
     if tracked.empty:
-        st.info("No jobs in your tracker yet — add some above (manually or from fetched jobs).")
+        st.info("No jobs in your tracker yet — add some above (manually or from Live Jobs).")
     else:
-        st.caption(f"{len(tracked)} tracked. Set each job's **stage** and **notes** "
-                   "(or untick **keep** to remove it), then Save.")
-        STAGES = ["shortlisted", "applied", "assessment", "interview", "offer", "rejected"]
-        tv = tracked.copy().reset_index(drop=True)
-        tv["stage"] = tv["status"].where(tv["status"].isin(STAGES), "shortlisted")
-        tv["keep"] = True
-        tcols = [c for c in ["keep", "title", "company", "locations", "fit", "stage", "notes", "url"]
-                 if c in tv.columns]
-        edited = st.data_editor(
-            tv[tcols], hide_index=True, width="stretch", num_rows="fixed", height=560, key="trk",
-            disabled=[c for c in tcols if c not in ("keep", "stage", "notes")],
-            column_config={
-                "keep": st.column_config.CheckboxColumn("keep", width="small"),
-                "stage": st.column_config.SelectboxColumn("stage", options=STAGES, width="small"),
-                "fit": st.column_config.NumberColumn("fit", format="%d", width="small"),
-                "url": st.column_config.LinkColumn("link", display_text="open"),
-                "notes": st.column_config.TextColumn("notes", width="large")})
-        if st.button("💾 Save tracker", type="primary"):
+        STAGES = [("📌 To apply", "#4f8cff", "shortlisted"),
+                  ("✅ Applied", "#5ad19b", "applied"),
+                  ("📝 Assessment", "#ffce6b", "assessment"),
+                  ("✔️ Cleared", "#8ee06b", "assessment_cleared"),
+                  ("🎤 Interview", "#c792ea", "interview"),
+                  ("🏆 Offer", "#ffd54a", "offer"),
+                  ("❌ Rejected", "#ff6b6b", "rejected")]
+        STAGE_VALUES = [s for _, _, s in STAGES]
+        APP = STAGE_VALUES[1:]     # everything past "To apply"
+        moves: dict[str, str] = {}
+        deletes: list[str] = []
+        bcols = st.columns(len(STAGES))
+        for bcol, (label, color, sval) in zip(bcols, STAGES):
+            items = (tracked[~tracked["status"].isin(APP)] if sval == "shortlisted"
+                     else tracked[tracked["status"] == sval]).sort_values("fit_score", ascending=False)
+            bcol.markdown(
+                f"<div style='background:{color};color:#0e1117;padding:6px 4px;border-radius:8px;"
+                f"font-weight:700;text-align:center;font-size:12px'>{label}<br>{len(items)}</div>",
+                unsafe_allow_html=True)
+            for _, r in items.iterrows():
+                with bcol.container(border=True):
+                    star = "⭐ " if r.get("in_bucket") else ""
+                    fit = int(r.get("fit_score") or 0)
+                    link = f" · [open]({r['url']})" if r.get("url") else ""
+                    st.markdown(
+                        f"{star}**{str(r['title'])[:32]}**  \n"
+                        f"<span style='color:#8b93a7;font-size:11px'>{str(r['company'])[:22]}"
+                        f"{' · fit ' + str(fit) if fit else ''}</span>{link}", unsafe_allow_html=True)
+                    mv = st.selectbox("stage", STAGE_VALUES, index=STAGE_VALUES.index(sval),
+                                      key=f"mv_{r['dedupe_key']}", label_visibility="collapsed")
+                    if mv != sval:
+                        moves[r["dedupe_key"]] = mv
+                    if st.checkbox("🗑", key=f"del_{r['dedupe_key']}"):
+                        deletes.append(r["dedupe_key"])
+        st.divider()
+        if st.button("💾 Save board", type="primary"):
             store = get_store(url)
-            keys = tv["dedupe_key"].tolist()
-            untrack, changed = [], 0
-            for i, k in enumerate(keys):
-                if not edited.iloc[i]["keep"]:
-                    untrack.append(k)
-                    continue
-                ns, nn = edited.iloc[i]["stage"], str(edited.iloc[i]["notes"] or "")
-                if ns != tv.iloc[i]["status"] or nn != str(tv.iloc[i]["notes"] or ""):
-                    store.set_status(k, ns, notes=nn)
-                    changed += 1
-            if untrack:
-                store.set_tracked(untrack, False)
+            n_moved = 0
+            for k, s in moves.items():
+                if k not in deletes:
+                    store.set_status(k, s)
+                    n_moved += 1
+            if deletes:
+                store.delete_jobs(deletes)
             st.cache_data.clear()
-            st.success(f"Saved {changed} change(s); removed {len(untrack)} from tracker.")
+            st.success(f"Moved {n_moved} · deleted {len(deletes)}.")
             st.rerun()
 
 # --------------------------------------------------------------- TAILORED CVS
