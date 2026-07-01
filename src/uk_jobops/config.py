@@ -38,6 +38,7 @@ class Secrets:
     groq_api_key: str = ""
     deepseek_api_key: str = ""
     apify_token: str = ""
+    apify_tokens: list[str] = field(default_factory=list)
     serpapi_key: str = ""
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
@@ -54,6 +55,9 @@ class Secrets:
             groq_api_key=g("GROQ_API_KEY", ""),
             deepseek_api_key=g("DEEPSEEK_API_KEY", ""),
             apify_token=g("APIFY_TOKEN", ""),
+            apify_tokens=[t for t in (g("APIFY_TOKEN_1", ""), g("APIFY_TOKEN_2", ""),
+                                      g("APIFY_TOKEN_3", ""), g("APIFY_TOKEN_4", ""),
+                                      g("APIFY_TOKEN", "")) if t],
             serpapi_key=g("SERPAPI_KEY", ""),
             telegram_bot_token=g("TELEGRAM_BOT_TOKEN", ""),
             telegram_chat_id=g("TELEGRAM_CHAT_ID", ""),

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from . import notify
-from .bucketlist import is_bucket, load_bucket_companies
+from .bucketlist import bucket_tier, load_bucket_tiers
 from .config import Config, load_config
 from .dedupe import dedupe
 from .filtering import apply_filters
@@ -57,15 +57,17 @@ class Pipeline:
                                           sen.get("exclude_company", []))
         targets = dedupe(targets)
 
-        # Boost: flag jobs whose employer is on the bucket list so they jump the
-        # scoring/tailoring queue (db queries ORDER BY in_bucket DESC).
-        bucket = load_bucket_companies(
+        # Boost: tag jobs by bucket tier so top-100 target companies jump the
+        # scoring/tailoring queue (db queries order top100 first, then any bucket).
+        tiers = load_bucket_tiers(
             self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_bucketlist.csv")))
         for j in targets:
-            j.in_bucket = is_bucket(j.company, bucket)
+            j.bucket_tier = bucket_tier(j.company, tiers)
+            j.in_bucket = bool(j.bucket_tier)
 
         summary = {"mode": mode, "discovered": len(raw), "targets": len(targets),
                    "rejected": len(rejected), "bucket_matches": sum(1 for j in targets if j.in_bucket),
+                   "top100_matches": sum(1 for j in targets if j.bucket_tier == "top100"),
                    "sources": statuses, "scored": 0, "tailored": 0}
 
         # snapshot for offline inspection

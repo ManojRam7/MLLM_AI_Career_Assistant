@@ -35,6 +35,7 @@ class Job:
     status: str = "new"          # new | scored | shortlisted | tailored | applied | interview | offer | rejected
     is_custom: bool = False      # manually added by the user
     in_bucket: bool = False      # company is on the bucket list (gets priority)
+    bucket_tier: str = ""        # "top100" | "master" | "" (top100 = highest priority)
     notes: str = ""              # free-text tracker notes
     locations: str = ""          # every location this same role was seen in (aggregated)
     cv_path: str = ""

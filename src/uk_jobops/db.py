@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     status       TEXT DEFAULT 'new',
     is_custom    BOOLEAN DEFAULT FALSE,
     in_bucket    BOOLEAN DEFAULT FALSE,
+    bucket_tier  TEXT DEFAULT '',
     notes        TEXT DEFAULT '',
     locations    TEXT DEFAULT '',
     applied_at   TEXT DEFAULT '',
@@ -48,6 +49,7 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS applied_at TEXT DEFAULT '';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cv_blob BYTEA;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cover_blob BYTEA;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS locations TEXT DEFAULT '';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS bucket_tier TEXT DEFAULT '';
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_fit_idx ON jobs(fit_score DESC);
 
@@ -63,13 +65,14 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 
 UPSERT = """
 INSERT INTO jobs (dedupe_key,title,company,location,locations,url,description,posted_date,salary,remote,
-                  source,source_query,seniority,is_target,in_bucket,first_seen_at,last_seen_at,is_custom,status)
+                  source,source_query,seniority,is_target,in_bucket,bucket_tier,first_seen_at,last_seen_at,is_custom,status)
 VALUES (%(dedupe_key)s,%(title)s,%(company)s,%(location)s,%(locations)s,%(url)s,%(description)s,%(posted_date)s,
-        %(salary)s,%(remote)s,%(source)s,%(source_query)s,%(seniority)s,%(is_target)s,%(in_bucket)s,
+        %(salary)s,%(remote)s,%(source)s,%(source_query)s,%(seniority)s,%(is_target)s,%(in_bucket)s,%(bucket_tier)s,
         %(first_seen_at)s,%(last_seen_at)s,%(is_custom)s,%(status)s)
 ON CONFLICT (dedupe_key) DO UPDATE SET
     last_seen_at = EXCLUDED.last_seen_at,
     in_bucket = jobs.in_bucket OR EXCLUDED.in_bucket,
+    bucket_tier = COALESCE(NULLIF(EXCLUDED.bucket_tier,''), jobs.bucket_tier),
     locations = CASE WHEN length(COALESCE(EXCLUDED.locations,'')) > length(COALESCE(jobs.locations,''))
                      THEN EXCLUDED.locations ELSE jobs.locations END,
     url = COALESCE(NULLIF(EXCLUDED.url,''), jobs.url),
@@ -173,7 +176,7 @@ class Store:
         return self._rows(
             "SELECT dedupe_key,title,company,location,description FROM jobs "
             "WHERE status='new' AND is_target=TRUE AND fit_score=0 "
-            "ORDER BY in_bucket DESC LIMIT %s", (limit,))
+            "ORDER BY (bucket_tier='top100') DESC, in_bucket DESC LIMIT %s", (limit,))
 
     def jobs_to_tailor(self, threshold: int, limit: int = 6) -> list[dict[str, Any]]:
         # cv_blob IS NULL also re-tailors older jobs whose file bytes were never stored,
@@ -182,7 +185,7 @@ class Store:
             "SELECT dedupe_key,title,company,location,description FROM jobs "
             "WHERE cv_blob IS NULL AND is_target=TRUE "
             "AND (fit_score >= %s OR is_custom=TRUE) "
-            "ORDER BY in_bucket DESC, fit_score DESC LIMIT %s", (threshold, limit))
+            "ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, fit_score DESC LIMIT %s", (threshold, limit))
 
     def digest(self, min_fit: int = 70, limit: int = 20) -> list[dict[str, Any]]:
         return self._rows(
@@ -191,9 +194,10 @@ class Store:
 
     def all_jobs(self, limit: int = 2000) -> list[dict[str, Any]]:
         return self._rows(
-            "SELECT dedupe_key,title,company,location,locations,source,in_bucket,fit_score,seniority,status,"
+            "SELECT dedupe_key,title,company,location,locations,source,in_bucket,bucket_tier,fit_score,seniority,status,"
             "notes,applied_at,url,cv_path,cover_path,fit_reasoning,ghost_flag,posted_date,first_seen_at "
-            "FROM jobs ORDER BY in_bucket DESC, fit_score DESC, first_seen_at DESC LIMIT %s", (limit,))
+            "FROM jobs ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, fit_score DESC, first_seen_at DESC LIMIT %s",
+            (limit,))
 
     def tailored_blobs(self) -> list[dict[str, Any]]:
         return self._rows(
