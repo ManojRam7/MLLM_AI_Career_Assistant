@@ -102,8 +102,8 @@ with st.sidebar:
         st.rerun()
     st.caption("Data refreshes every 60s, or click Refresh.")
 
-tab_overview, tab_pipeline, tab_tracker, tab_cvs, tab_add = st.tabs(
-    ["📊 Overview", "⚙️ Pipeline & LLMs", "✅ Job tracker", "📄 Tailored CVs", "➕ Add a job"])
+tab_overview, tab_pipeline, tab_tracker, tab_cvs = st.tabs(
+    ["📊 Overview", "⚙️ Pipeline & LLMs", "✅ Live Jobs", "📄 Tailored CVs"])
 
 # ---------------------------------------------------------------- OVERVIEW
 with tab_overview:
@@ -219,9 +219,26 @@ with tab_pipeline:
         st.dataframe(show, hide_index=True, use_container_width=True)
         st.line_chart(runs.set_index("run_at")[["discovered", "targets", "scored"]].iloc[::-1])
 
-# ----------------------------------------------------------------- TRACKER
+# ----------------------------------------------------------------- LIVE JOBS
 with tab_tracker:
-    st.subheader("Editable job tracker")
+    st.subheader("Live jobs")
+    with st.expander("➕ Add a job manually (a custom role you found yourself)"):
+        with st.form("add_job", clear_on_submit=True):
+            a1, a2 = st.columns(2)
+            _t = a1.text_input("Job title *")
+            _c = a2.text_input("Company *")
+            _u = st.text_input("Job URL")
+            _l = st.text_input("Location", value="United Kingdom")
+            _d = st.text_area("Job description (paste for best tailoring)", height=120)
+            if st.form_submit_button("Add job", type="primary"):
+                if not _t or not _c:
+                    st.warning("Title and company are required.")
+                else:
+                    get_store(url).add_custom_job(title=_t, company=_c, url=_u, location=_l, description=_d)
+                    st.cache_data.clear()
+                    st.success(f"Added '{_t}' at {_c}.")
+                    st.rerun()
+
     if jobs.empty:
         st.info("No jobs yet.")
     else:
@@ -244,13 +261,17 @@ with tab_tracker:
             view = view[view["title"].str.lower().str.contains(q, na=False)
                         | view["company"].str.lower().str.contains(q, na=False)]
         view = view[view["fit_score"] >= min_fit].reset_index(drop=True)
-        st.caption(f"{len(view)} jobs. Edit **status** and **notes**, then Save.")
+        st.caption(f"Showing {len(view)} of {len(jobs)} jobs. Edit **status** and **notes**, then Save.")
 
         cols = ["new", "title", "company", "locations", "posted", "fetched", "source",
                 "in_bucket", "fit", "status", "notes", "url"]
         cols = [c for c in cols if c in view.columns]
+        # editor key depends on the active filters so the grid re-renders cleanly when
+        # they change (a fixed key kept stale edit-state and made filtering look broken)
+        fkey = abs(hash(f"{sorted(pick)}|{sorted(srcs)}|{only_bucket}|{query}|{min_fit}"))
         edited = st.data_editor(
-            view[cols], hide_index=True, use_container_width=True, num_rows="fixed", key="tracker",
+            view[cols], hide_index=True, use_container_width=True, num_rows="fixed",
+            height=680, key=f"tracker_{fkey}",
             disabled=[c for c in cols if c not in ("status", "notes")],
             column_config={
                 "status": st.column_config.SelectboxColumn("status", options=STATUSES, width="small"),
@@ -310,21 +331,3 @@ with tab_cvs:
                     st.caption("⏳ File will be available after the next tailoring run "
                                "(this CV was made before file-storage; it's being regenerated once).")
 
-# ----------------------------------------------------------------- ADD A JOB
-with tab_add:
-    st.subheader("Add a job manually")
-    st.caption("For roles you found yourself. It enters the tailoring queue immediately.")
-    with st.form("add_job", clear_on_submit=True):
-        title = st.text_input("Job title *")
-        company = st.text_input("Company *")
-        urlin = st.text_input("Job URL")
-        loc = st.text_input("Location", value="United Kingdom")
-        desc = st.text_area("Job description (paste for best tailoring)", height=200)
-        if st.form_submit_button("Add job", type="primary"):
-            if not title or not company:
-                st.warning("Title and company are required.")
-            else:
-                get_store(url).add_custom_job(title=title, company=company, url=urlin,
-                                              location=loc, description=desc)
-                st.cache_data.clear()
-                st.success(f"Added '{title}' at {company}. See it in the Job tracker tab.")

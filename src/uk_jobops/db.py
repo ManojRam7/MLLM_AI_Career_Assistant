@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     fit_score    INTEGER DEFAULT 0,
     fit_reasoning TEXT,
     ghost_flag   BOOLEAN DEFAULT FALSE,
+    notified     BOOLEAN DEFAULT FALSE,
     status       TEXT DEFAULT 'new',
     is_custom    BOOLEAN DEFAULT FALSE,
     in_bucket    BOOLEAN DEFAULT FALSE,
@@ -50,6 +51,7 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cv_blob BYTEA;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cover_blob BYTEA;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS locations TEXT DEFAULT '';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS bucket_tier TEXT DEFAULT '';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS notified BOOLEAN DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_fit_idx ON jobs(fit_score DESC);
 
@@ -129,6 +131,18 @@ class Store:
         vals = [json.dumps(v) if k == "gaps" else v for k, v in fields.items()]
         with self.conn.cursor() as cur:
             cur.execute(f"UPDATE jobs SET {sets} WHERE dedupe_key = %s", (*vals, dedupe_key))
+
+    def mark_notified(self, keys: list[str]) -> None:
+        if not keys:
+            return
+        with self.conn.cursor() as cur:
+            cur.execute("UPDATE jobs SET notified=TRUE WHERE dedupe_key = ANY(%s)", (list(keys),))
+
+    def jobs_to_notify(self, min_fit: int = 75, limit: int = 10) -> list[dict[str, Any]]:
+        return self._rows(
+            "SELECT dedupe_key,title,company,location,locations,fit_score,fit_reasoning,url,in_bucket,bucket_tier "
+            "FROM jobs WHERE notified=FALSE AND is_target=TRUE AND fit_score >= %s "
+            "ORDER BY (bucket_tier='top100') DESC, fit_score DESC LIMIT %s", (min_fit, limit))
 
     def set_status(self, dedupe_key: str, status: str, notes: str | None = None) -> None:
         fields: dict[str, Any] = {"status": status}

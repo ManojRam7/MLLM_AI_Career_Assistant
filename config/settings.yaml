@@ -60,6 +60,10 @@ scoring:
   score_batch_size: 8            # jobs scored per LLM call (fewer calls + tokens; clears backlog faster)
   max_tailor_per_run: 6          # cap CV tailoring per run; the backlog clears over runs
 
+notify:
+  min_fit: 75                    # only send a Telegram alert for jobs at/above this fit
+  max_per_run: 10                # cap Telegram messages per run (avoid spam)
+
 sources:
   reed: { enabled: true }
   adzuna: { enabled: true, country: "gb" }

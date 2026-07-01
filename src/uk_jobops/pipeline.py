@@ -181,7 +181,16 @@ class Pipeline:
 
         digest = store.digest(min_fit=scoring.get("tailor_threshold", 70))
         notify.write_digest(digest)
-        notify.send_telegram(digest, self.cfg.secrets.telegram_bot_token, self.cfg.secrets.telegram_chat_id)
+        # rich per-job Telegram alerts for new high-fit roles (each job alerted once)
+        tg = self.cfg.secrets
+        if tg.telegram_bot_token and tg.telegram_chat_id:
+            ncfg = self.s.get("notify", {})
+            alerts = store.jobs_to_notify(ncfg.get("min_fit", 75), limit=ncfg.get("max_per_run", 10))
+            first_name = (self.s.get("candidate", {}).get("name", "there") or "there").split()[0]
+            sent = notify.send_job_alerts(alerts, tg.telegram_bot_token, tg.telegram_chat_id, first_name)
+            if sent:
+                store.mark_notified([a["dedupe_key"] for a in alerts])
+                summary["telegram_sent"] = sent
 
         # persist run history (dashboard reads these) + a local snapshot
         store.log_run(summary)
