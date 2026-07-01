@@ -19,7 +19,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from uk_jobops.config import load_config            # noqa: E402
 from uk_jobops.db import Store                       # noqa: E402
 
-STATUSES = ["new", "scored", "shortlisted", "tailored", "applied", "interview", "offer", "rejected"]
+STATUSES = ["new", "scored", "shortlisted", "tailored", "applied", "assessment",
+            "interview", "offer", "rejected"]
 
 st.set_page_config(page_title="Job Search Assistant", page_icon="🧭", layout="wide")
 
@@ -102,8 +103,8 @@ with st.sidebar:
         st.rerun()
     st.caption("Data refreshes every 60s, or click Refresh.")
 
-tab_overview, tab_pipeline, tab_tracker, tab_cvs = st.tabs(
-    ["📊 Overview", "⚙️ Pipeline & LLMs", "✅ Live Jobs", "📄 Tailored CVs"])
+tab_overview, tab_pipeline, tab_tracker, tab_board, tab_cvs = st.tabs(
+    ["📊 Overview", "⚙️ Pipeline & LLMs", "✅ Live Jobs", "📋 Tracker", "📄 Tailored CVs"])
 
 # ---------------------------------------------------------------- OVERVIEW
 with tab_overview:
@@ -295,6 +296,54 @@ with tab_tracker:
                     n += 1
             st.cache_data.clear()
             st.success(f"Saved {n} change(s).")
+            st.rerun()
+
+# --------------------------------------------------------------- TRACKER (KANBAN)
+with tab_board:
+    st.subheader("Application tracker")
+    st.caption("Your application pipeline. High-fit roles land in **Ready** automatically — "
+               "change a card's stage and hit Save board to move it along.")
+    if jobs.empty:
+        st.info("No jobs yet.")
+    else:
+        STAGES = [("📌 Ready", "#4f8cff", ["shortlisted", "tailored"]),
+                  ("✅ Applied", "#5ad19b", ["applied"]),
+                  ("📝 Assessment", "#ffce6b", ["assessment"]),
+                  ("🎤 Interview", "#c792ea", ["interview"]),
+                  ("🏆 Offer", "#ffd54a", ["offer"]),
+                  ("❌ Rejected", "#ff6b6b", ["rejected"])]
+        MOVE = ["shortlisted", "tailored", "applied", "assessment", "interview", "offer", "rejected"]
+        board = jobs[jobs["status"].isin([s for _, _, ss in STAGES for s in ss])]
+        picks: dict[str, str] = {}
+        bcols = st.columns(len(STAGES))
+        for bcol, (label, color, statuses) in zip(bcols, STAGES):
+            items = board[board["status"].isin(statuses)].sort_values("fit_score", ascending=False)
+            bcol.markdown(
+                f"<div style='background:{color};color:#0e1117;padding:5px;border-radius:7px;"
+                f"font-weight:700;text-align:center;margin-bottom:8px'>{label} · {len(items)}</div>",
+                unsafe_allow_html=True)
+            for _, r in items.head(30).iterrows():
+                with bcol.container(border=True):
+                    star = "⭐ " if r.get("in_bucket") else ""
+                    fit = int(r.get("fit_score") or 0)
+                    st.markdown(
+                        f"{star}**{str(r['title'])[:38]}**  \n"
+                        f"<span style='color:#8b93a7;font-size:12px'>{str(r['company'])[:26]} · fit {fit}</span>",
+                        unsafe_allow_html=True)
+                    cur = r["status"] if r["status"] in MOVE else "shortlisted"
+                    new = st.selectbox("stage", MOVE, index=MOVE.index(cur),
+                                       key=f"kb_{r['dedupe_key']}", label_visibility="collapsed")
+                    if new != r["status"]:
+                        picks[r["dedupe_key"]] = new
+            if len(items) > 30:
+                bcol.caption(f"+{len(items) - 30} more (move some along to see them)")
+        st.divider()
+        if st.button("💾 Save board", type="primary", disabled=not picks):
+            store = get_store(url)
+            for k, s in picks.items():
+                store.set_status(k, s)
+            st.cache_data.clear()
+            st.success(f"Moved {len(picks)} job(s).")
             st.rerun()
 
 # --------------------------------------------------------------- TAILORED CVS

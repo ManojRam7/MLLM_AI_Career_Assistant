@@ -63,6 +63,7 @@ scoring:
 notify:
   min_fit: 75                    # only send a Telegram alert for jobs at/above this fit
   max_per_run: 10                # cap Telegram messages per run (avoid spam)
+  heartbeat: true                # send a short 'run complete' message each run (set false once confirmed working)
 
 sources:
   reed: { enabled: true }

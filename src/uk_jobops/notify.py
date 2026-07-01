@@ -1,4 +1,5 @@
-"""Telegram job alerts (rich, per-job, with recommendation levels) + a local digest file."""
+"""Telegram job alerts (rich, per-job, with recommendation levels) + a local digest file.
+Send functions return diagnostics so the pipeline can surface *why* Telegram failed."""
 from __future__ import annotations
 
 import re
@@ -24,7 +25,6 @@ def _level(fit: int) -> tuple[str, str]:
 
 
 def _clean(s) -> str:
-    # strip characters that break Telegram legacy-Markdown in dynamic fields
     return re.sub(r"[_*`\[\]]", "", str(s or "")).strip()
 
 
@@ -51,21 +51,36 @@ def _message(r: dict, name: str) -> str:
     return "\n".join(parts)
 
 
-def send_job_alerts(rows: list[dict], token: str, chat_id: str, name: str = "there") -> int:
-    """Send one rich Telegram message per job. Returns how many were sent."""
-    if not (token and chat_id and rows):
-        return 0
+def send_message(token: str, chat_id: str, text: str) -> tuple[bool, str]:
+    """Send one Telegram message. Returns (ok, detail) so callers can report errors."""
+    if not (token and chat_id):
+        return False, "no token/chat_id"
     import requests
 
-    sent = 0
-    for r in rows:
+    try:
+        r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
+                          json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown",
+                                "disable_web_page_preview": True}, timeout=20)
+        if r.status_code == 200:
+            return True, "ok"
         try:
-            resp = requests.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": chat_id, "text": _message(r, name), "parse_mode": "Markdown",
-                      "disable_web_page_preview": True}, timeout=20)
-            if resp.status_code == 200:
-                sent += 1
+            desc = r.json().get("description", r.text[:160])
         except Exception:
-            pass
-    return sent
+            desc = r.text[:160]
+        return False, f"{r.status_code} {desc}"
+    except Exception as exc:
+        return False, str(exc)[:160]
+
+
+def send_job_alerts(rows: list[dict], token: str, chat_id: str, name: str = "there") -> tuple[int, str]:
+    """Send one rich message per job. Returns (count_sent, first_error)."""
+    if not (token and chat_id and rows):
+        return 0, ""
+    sent, err = 0, ""
+    for r in rows:
+        ok, detail = send_message(token, chat_id, _message(r, name))
+        if ok:
+            sent += 1
+        elif not err:
+            err = detail
+    return sent, err

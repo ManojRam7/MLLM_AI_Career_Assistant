@@ -44,8 +44,8 @@ def main() -> None:
     if not rows:
         print("No high-fit jobs in the database yet to alert on.")
         return
-    sent = notify.send_job_alerts(rows, tok, chat, name)
-    print(f"Sent {sent} job alert(s) ✔  — check Telegram.")
+    sent, err = notify.send_job_alerts(rows, tok, chat, name)
+    print(f"Sent {sent} job alert(s)" + (f" (error: {err})" if err else " ✔") + " — check Telegram.")
 
 
 if __name__ == "__main__":

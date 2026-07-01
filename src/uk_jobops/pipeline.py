@@ -190,16 +190,24 @@ class Pipeline:
 
         digest = store.digest(min_fit=scoring.get("tailor_threshold", 70))
         notify.write_digest(digest)
-        # rich per-job Telegram alerts for new high-fit roles (each job alerted once)
+        # Telegram: a per-run heartbeat (so you always get a message + can see failures)
+        # plus one rich alert per new high-fit role. Errors are surfaced in the summary.
         tg = self.cfg.secrets
         if tg.telegram_bot_token and tg.telegram_chat_id:
             ncfg = self.s.get("notify", {})
             alerts = store.jobs_to_notify(ncfg.get("min_fit", 75), limit=ncfg.get("max_per_run", 10))
             first_name = (self.s.get("candidate", {}).get("name", "there") or "there").split()[0]
-            sent = notify.send_job_alerts(alerts, tg.telegram_bot_token, tg.telegram_chat_id, first_name)
+            hb_ok, hb_detail = True, "off"
+            if ncfg.get("heartbeat", True):
+                hb = (f"🔔 *Job Search Assistant* — run complete\n"
+                      f"Discovered {summary.get('discovered', 0)} · scored {summary.get('scored', 0)} · "
+                      f"tailored {summary.get('tailored', 0)}\nNew high-fit alerts below: {len(alerts)}")
+                hb_ok, hb_detail = notify.send_message(tg.telegram_bot_token, tg.telegram_chat_id, hb)
+            sent, aerr = notify.send_job_alerts(alerts, tg.telegram_bot_token, tg.telegram_chat_id, first_name)
             if sent:
                 store.mark_notified([a["dedupe_key"] for a in alerts])
-                summary["telegram_sent"] = sent
+            summary["telegram"] = (f"heartbeat={'ok' if hb_ok else 'FAIL: ' + hb_detail}; "
+                                   f"alerts_sent={sent}" + (f"; alert_error={aerr}" if aerr else ""))
 
         # persist run history (dashboard reads these) + a local snapshot
         store.log_run(summary)
