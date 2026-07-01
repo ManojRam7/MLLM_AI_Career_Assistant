@@ -4,6 +4,7 @@ matches 'Barclays UK' and 'Lloyds Banking Group' matches 'Lloyds'."""
 from __future__ import annotations
 
 import csv
+import random
 from pathlib import Path
 
 _STOP = {"uk", "ltd", "limited", "plc", "group", "europe", "international", "the",
@@ -58,3 +59,18 @@ def is_bucket(company: str, tiers) -> bool:
     if isinstance(tiers, dict):
         return bool(bucket_tier(company, tiers))
     return bool(bucket_tier(company, {c: "master" for c in tiers}))
+
+
+def sample_top_companies(path: str | Path, n: int = 5) -> list[str]:
+    """A random sample of top-100 company names, for rotating per-run targeted search."""
+    p = Path(path)
+    if not p.exists():
+        return []
+    tops: list[str] = []
+    with p.open(encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f):
+            if (row.get("tier") or "").strip() == "top100":
+                name = (row.get("company_name") or "").strip()
+                if name:
+                    tops.append(name)
+    return random.sample(tops, min(n, len(tops))) if tops else []

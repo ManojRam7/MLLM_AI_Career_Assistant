@@ -69,7 +69,12 @@ sources:
   adzuna: { enabled: true, country: "gb" }
   ats: { enabled: true }         # Greenhouse / Lever / Ashby for bucket-list companies
   careers_playwright: { enabled: false }
-  apify: { enabled: false }      # paid
+  apify:                         # Google Jobs via Apify (LinkedIn/Indeed/Glassdoor/Totaljobs/CV-Library/boards)
+    enabled: true
+    actor: "johnvc~google-jobs-scraper"
+    top_companies_per_run: 5     # rotating sample of top-100 target companies searched each run
+    num_results: 50
+    max_queries: 6               # generic DS queries + company queries, capped for cost/time
   serpapi: { enabled: false }    # paid
 
 bucket_list:

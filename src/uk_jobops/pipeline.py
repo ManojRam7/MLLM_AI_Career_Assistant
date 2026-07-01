@@ -33,6 +33,15 @@ class Pipeline:
         if src_cfg.get("ats", {}).get("enabled"):
             out.append(ATSSource(self.s.get("bucket_list", {}).get("path", "data/companies_bucketlist.csv"),
                                  self.s.get("seniority", {}).get("include", [])))
+        ap = src_cfg.get("apify", {})
+        if ap.get("enabled") and sec.apify_tokens:
+            from .sources.apify_google import ApifyGoogleSource
+            out.append(ApifyGoogleSource(
+                sec.apify_tokens,
+                self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_bucketlist.csv")),
+                actor=ap.get("actor", "johnvc~google-jobs-scraper"),
+                top_companies_per_run=ap.get("top_companies_per_run", 5),
+                num_results=ap.get("num_results", 50), max_queries=ap.get("max_queries", 6)))
         return out
 
     def discover(self, recency_days: int):
