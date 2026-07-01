@@ -27,15 +27,25 @@ def classify(title: str, include: list[str], exclude_title: list[str]) -> tuple[
     return True, "data-scientist"
 
 
+_RECRUITER = re.compile(
+    r"\b(recruit\w*|staffing|resourc\w*|rpo|headhunt\w*|talent solutions|"
+    r"talent acquisition|executive search|search partners)\b", re.I)
+
+
 def apply_filters(jobs: list[Job], include: list[str], exclude_title: list[str],
-                  exclude_company: list[str] | None = None) -> tuple[list[Job], list[Job]]:
-    """Split into (targets, rejected)."""
+                  exclude_company: list[str] | None = None,
+                  exclude_recruiters: bool = True) -> tuple[list[Job], list[Job]]:
+    """Split into (targets, rejected). Drops recruitment agencies so only DIRECT
+    employers remain (the point of a bucket-list-driven search)."""
     excl_co = [c.lower() for c in (exclude_company or [])]
     targets, rejected = [], []
     for j in jobs:
         ok, label = classify(j.title, include, exclude_title)
-        if ok and excl_co and any(c in (j.company or "").lower() for c in excl_co):
+        company = j.company or ""
+        if ok and excl_co and any(c in company.lower() for c in excl_co):
             ok, label = False, "excluded-company"
+        elif ok and exclude_recruiters and _RECRUITER.search(company):
+            ok, label = False, "recruiter"
         j.seniority = label
         j.is_target = ok
         (targets if ok else rejected).append(j)

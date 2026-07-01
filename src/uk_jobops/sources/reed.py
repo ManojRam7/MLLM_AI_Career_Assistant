@@ -26,7 +26,7 @@ class ReedSource(Source):
                     "keywords": q,
                     "locationName": "United Kingdom",
                     "resultsToTake": min(100, per_query),
-                    "postedByRecruitmentAgency": "true",
+                    "postedByDirectEmployer": "true",   # direct employers, not recruiters
                 }
                 r = requests.get(BASE, params=params, auth=(self.api_key, ""), timeout=30)
                 r.raise_for_status()

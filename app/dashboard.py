@@ -223,23 +223,7 @@ with tab_pipeline:
 # ----------------------------------------------------------------- LIVE JOBS
 with tab_tracker:
     st.subheader("Live jobs")
-    with st.expander("➕ Add a job manually (a custom role you found yourself)"):
-        with st.form("add_job", clear_on_submit=True):
-            a1, a2 = st.columns(2)
-            _t = a1.text_input("Job title *")
-            _c = a2.text_input("Company *")
-            _u = st.text_input("Job URL")
-            _l = st.text_input("Location", value="United Kingdom")
-            _d = st.text_area("Job description (paste for best tailoring)", height=120)
-            if st.form_submit_button("Add job", type="primary"):
-                if not _t or not _c:
-                    st.warning("Title and company are required.")
-                else:
-                    get_store(url).add_custom_job(title=_t, company=_c, url=_u, location=_l, description=_d)
-                    st.cache_data.clear()
-                    st.success(f"Added '{_t}' at {_c}.")
-                    st.rerun()
-
+    st.caption("Every job fetched from all sources. Add the ones you're pursuing from the **Tracker** tab.")
     if jobs.empty:
         st.info("No jobs yet.")
     else:
@@ -298,52 +282,80 @@ with tab_tracker:
             st.success(f"Saved {n} change(s).")
             st.rerun()
 
-# --------------------------------------------------------------- TRACKER (KANBAN)
+# --------------------------------------------------------------- TRACKER
 with tab_board:
     st.subheader("Application tracker")
-    st.caption("Your application pipeline. High-fit roles land in **Ready** automatically — "
-               "change a card's stage and hit Save board to move it along.")
-    if jobs.empty:
-        st.info("No jobs yet.")
+    st.caption("The jobs you're actively pursuing. Add them below, then manage each one's stage.")
+    ca, cb = st.columns(2)
+    with ca.expander("➕ Add a job manually"):
+        with st.form("add_manual", clear_on_submit=True):
+            m1, m2 = st.columns(2)
+            _t = m1.text_input("Job title *")
+            _c = m2.text_input("Company *")
+            _u = st.text_input("Job URL")
+            _l = st.text_input("Location", value="United Kingdom")
+            _d = st.text_area("Job description", height=100)
+            if st.form_submit_button("Add to tracker", type="primary"):
+                if not _t or not _c:
+                    st.warning("Title and company are required.")
+                else:
+                    get_store(url).add_custom_job(title=_t, company=_c, url=_u, location=_l, description=_d)
+                    st.cache_data.clear()
+                    st.success(f"Added '{_t}' to the tracker.")
+                    st.rerun()
+    with cb.expander("📥 Add from fetched jobs"):
+        if jobs.empty:
+            st.caption("No fetched jobs yet.")
+        else:
+            pool = jobs[~jobs["tracked"].fillna(False).astype(bool)].sort_values("fit_score", ascending=False)
+            labels = {f"{r['title']} · {r['company']} (fit {int(r.get('fit_score') or 0)})": r["dedupe_key"]
+                      for _, r in pool.head(300).iterrows()}
+            chosen = st.multiselect("Pick jobs to track", list(labels.keys()))
+            if st.button("Add selected", type="primary", disabled=not chosen):
+                get_store(url).set_tracked([labels[c] for c in chosen], True)
+                st.cache_data.clear()
+                st.success(f"Added {len(chosen)} job(s) to the tracker.")
+                st.rerun()
+
+    st.divider()
+    tracked = (jobs[jobs["tracked"].fillna(False).astype(bool)]
+               if not jobs.empty and "tracked" in jobs else jobs.iloc[0:0])
+    if tracked.empty:
+        st.info("No jobs in your tracker yet — add some above (manually or from fetched jobs).")
     else:
-        STAGES = [("📌 Ready", "#4f8cff", ["shortlisted", "tailored"]),
-                  ("✅ Applied", "#5ad19b", ["applied"]),
-                  ("📝 Assessment", "#ffce6b", ["assessment"]),
-                  ("🎤 Interview", "#c792ea", ["interview"]),
-                  ("🏆 Offer", "#ffd54a", ["offer"]),
-                  ("❌ Rejected", "#ff6b6b", ["rejected"])]
-        MOVE = ["shortlisted", "tailored", "applied", "assessment", "interview", "offer", "rejected"]
-        board = jobs[jobs["status"].isin([s for _, _, ss in STAGES for s in ss])]
-        picks: dict[str, str] = {}
-        bcols = st.columns(len(STAGES))
-        for bcol, (label, color, statuses) in zip(bcols, STAGES):
-            items = board[board["status"].isin(statuses)].sort_values("fit_score", ascending=False)
-            bcol.markdown(
-                f"<div style='background:{color};color:#0e1117;padding:5px;border-radius:7px;"
-                f"font-weight:700;text-align:center;margin-bottom:8px'>{label} · {len(items)}</div>",
-                unsafe_allow_html=True)
-            for _, r in items.head(30).iterrows():
-                with bcol.container(border=True):
-                    star = "⭐ " if r.get("in_bucket") else ""
-                    fit = int(r.get("fit_score") or 0)
-                    st.markdown(
-                        f"{star}**{str(r['title'])[:38]}**  \n"
-                        f"<span style='color:#8b93a7;font-size:12px'>{str(r['company'])[:26]} · fit {fit}</span>",
-                        unsafe_allow_html=True)
-                    cur = r["status"] if r["status"] in MOVE else "shortlisted"
-                    new = st.selectbox("stage", MOVE, index=MOVE.index(cur),
-                                       key=f"kb_{r['dedupe_key']}", label_visibility="collapsed")
-                    if new != r["status"]:
-                        picks[r["dedupe_key"]] = new
-            if len(items) > 30:
-                bcol.caption(f"+{len(items) - 30} more (move some along to see them)")
-        st.divider()
-        if st.button("💾 Save board", type="primary", disabled=not picks):
+        st.caption(f"{len(tracked)} tracked. Set each job's **stage** and **notes** "
+                   "(or untick **keep** to remove it), then Save.")
+        STAGES = ["shortlisted", "applied", "assessment", "interview", "offer", "rejected"]
+        tv = tracked.copy().reset_index(drop=True)
+        tv["stage"] = tv["status"].where(tv["status"].isin(STAGES), "shortlisted")
+        tv["keep"] = True
+        tcols = [c for c in ["keep", "title", "company", "locations", "fit", "stage", "notes", "url"]
+                 if c in tv.columns]
+        edited = st.data_editor(
+            tv[tcols], hide_index=True, use_container_width=True, num_rows="fixed", height=560, key="trk",
+            disabled=[c for c in tcols if c not in ("keep", "stage", "notes")],
+            column_config={
+                "keep": st.column_config.CheckboxColumn("keep", width="small"),
+                "stage": st.column_config.SelectboxColumn("stage", options=STAGES, width="small"),
+                "fit": st.column_config.NumberColumn("fit", format="%d", width="small"),
+                "url": st.column_config.LinkColumn("link", display_text="open"),
+                "notes": st.column_config.TextColumn("notes", width="large")})
+        if st.button("💾 Save tracker", type="primary"):
             store = get_store(url)
-            for k, s in picks.items():
-                store.set_status(k, s)
+            keys = tv["dedupe_key"].tolist()
+            untrack, changed = [], 0
+            for i, k in enumerate(keys):
+                if not edited.iloc[i]["keep"]:
+                    untrack.append(k)
+                    continue
+                ns, nn = edited.iloc[i]["stage"], str(edited.iloc[i]["notes"] or "")
+                if ns != tv.iloc[i]["status"] or nn != str(tv.iloc[i]["notes"] or ""):
+                    store.set_status(k, ns, notes=nn)
+                    changed += 1
+            if untrack:
+                store.set_tracked(untrack, False)
             st.cache_data.clear()
-            st.success(f"Moved {len(picks)} job(s).")
+            st.success(f"Saved {changed} change(s); removed {len(untrack)} from tracker.")
             st.rerun()
 
 # --------------------------------------------------------------- TAILORED CVS

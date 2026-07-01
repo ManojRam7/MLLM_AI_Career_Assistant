@@ -63,7 +63,8 @@ class Pipeline:
         normalize(raw)
         sen = self.s.get("seniority", {})
         targets, rejected = apply_filters(raw, sen.get("include", []), sen.get("exclude_title", []),
-                                          sen.get("exclude_company", []))
+                                          sen.get("exclude_company", []),
+                                          exclude_recruiters=sen.get("exclude_recruiters", True))
         targets = dedupe(targets)
 
         # Boost: tag jobs by bucket tier so top-100 target companies jump the
@@ -99,7 +100,8 @@ class Pipeline:
         # collapse any legacy/cross-location duplicates already in the table,
         # keeping the most-progressed row - runs BEFORE scoring so we never spend
         # LLM calls on the same role twice.
-        purged = store.purge_excluded(sen.get("exclude_title", []), sen.get("exclude_company", []))
+        purged = store.purge_excluded(sen.get("exclude_title", []), sen.get("exclude_company", []),
+                                      exclude_recruiters=sen.get("exclude_recruiters", True))
         if purged:
             summary["purged_excluded"] = purged
 
@@ -200,8 +202,11 @@ class Pipeline:
             hb_ok, hb_detail = True, "off"
             if ncfg.get("heartbeat", True):
                 hb = (f"🔔 *Job Search Assistant* — run complete\n"
-                      f"Discovered {summary.get('discovered', 0)} · scored {summary.get('scored', 0)} · "
-                      f"tailored {summary.get('tailored', 0)}\nNew high-fit alerts below: {len(alerts)}")
+                      f"Discovered {summary.get('discovered', 0)} · new {summary.get('stored_new', 0)} · "
+                      f"scored {summary.get('scored', 0)} · tailored {summary.get('tailored', 0)}\n"
+                      f"New alerts below: {len(alerts)}")
+                if summary.get("llm_note"):
+                    hb += f"\n⚠️ {summary['llm_note']}"
                 hb_ok, hb_detail = notify.send_message(tg.telegram_bot_token, tg.telegram_chat_id, hb)
             sent, aerr = notify.send_job_alerts(alerts, tg.telegram_bot_token, tg.telegram_chat_id, first_name)
             if sent:

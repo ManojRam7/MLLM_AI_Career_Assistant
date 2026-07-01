@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     notified     BOOLEAN DEFAULT FALSE,
     status       TEXT DEFAULT 'new',
     is_custom    BOOLEAN DEFAULT FALSE,
+    tracked      BOOLEAN DEFAULT FALSE,
     in_bucket    BOOLEAN DEFAULT FALSE,
     bucket_tier  TEXT DEFAULT '',
     notes        TEXT DEFAULT '',
@@ -52,6 +53,7 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cover_blob BYTEA;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS locations TEXT DEFAULT '';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS bucket_tier TEXT DEFAULT '';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS notified BOOLEAN DEFAULT FALSE;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS tracked BOOLEAN DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_fit_idx ON jobs(fit_score DESC);
 
@@ -122,7 +124,14 @@ class Store:
         row = j.to_db(); row["last_seen_at"] = _now()
         with self.conn.cursor() as cur:
             cur.execute(UPSERT, row)
+        self.update(j.dedupe_key, tracked=True)   # manual jobs go straight into the tracker
         return j.dedupe_key
+
+    def set_tracked(self, keys: list[str], tracked: bool = True) -> None:
+        if not keys:
+            return
+        with self.conn.cursor() as cur:
+            cur.execute("UPDATE jobs SET tracked=%s WHERE dedupe_key = ANY(%s)", (tracked, list(keys)))
 
     def update(self, dedupe_key: str, **fields: Any) -> None:
         if not fields:
@@ -161,9 +170,11 @@ class Store:
                  summary.get("rejected"), summary.get("scored"), summary.get("tailored"),
                  summary.get("stored_new"), summary.get("llm_note", "")))
 
-    def purge_excluded(self, exclude_title: list[str], exclude_company: list[str]) -> int:
-        """Delete already-stored rows that now match the exclude rules (junk stored
-        before the filters existed). Skips manually-added jobs. Idempotent - safe every run."""
+    def purge_excluded(self, exclude_title: list[str], exclude_company: list[str],
+                       exclude_recruiters: bool = True) -> int:
+        """Delete already-stored rows that now match the exclude rules or are recruitment
+        agencies (junk/recruiters stored before the filters existed). Skips manually-added
+        jobs. Idempotent - safe every run."""
         clauses: list[str] = []
         params: list[str] = []
         for term in (exclude_title or []):
@@ -172,6 +183,8 @@ class Store:
         for term in (exclude_company or []):
             clauses.append("company ILIKE %s")
             params.append(f"%{term}%")
+        if exclude_recruiters:
+            clauses.append(r"company ~* '\y(recruit\w*|staffing|resourc\w*|rpo|headhunt\w*)\y'")
         if not clauses:
             return 0
         sql = "DELETE FROM jobs WHERE is_custom = FALSE AND (" + " OR ".join(clauses) + ")"
@@ -209,7 +222,7 @@ class Store:
     def all_jobs(self, limit: int = 2000) -> list[dict[str, Any]]:
         return self._rows(
             "SELECT dedupe_key,title,company,location,locations,source,in_bucket,bucket_tier,fit_score,seniority,status,"
-            "notes,applied_at,url,cv_path,cover_path,fit_reasoning,ghost_flag,posted_date,first_seen_at "
+            "tracked,notes,applied_at,url,cv_path,cover_path,fit_reasoning,ghost_flag,posted_date,first_seen_at "
             "FROM jobs ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, fit_score DESC, first_seen_at DESC LIMIT %s",
             (limit,))
 

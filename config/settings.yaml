@@ -47,11 +47,41 @@ seniority:
     - "chief"
     - "manager"
     - "trainee"                   # training-course adverts, not real hiring
-  exclude_company:               # bootcamp / "career switch" course advertisers, not DS employers
+  exclude_recruiters: true       # drop recruitment agencies (names matching recruit/staffing/rpo/etc.)
+  exclude_company:               # course advertisers + named agencies the keyword filter misses
     - "IT Career Switch"
     - "Career Switch"
     - "Nuyew"
     - "KnowledgeHut"
+    - "Lorien"
+    - "Robert Half"
+    - "Morgan McKinley"
+    - "Searchability"
+    - "Salt Search"
+    - "Mercor"
+    - "VIA MATCH"
+    - "167 Solutions"
+    - "Gleeson"
+    - "Huxley"
+    - "Sanderson"
+    - "Boston Hale"
+    - "Oscar Associates"
+    - "Oscar Technology"
+    - "Digital Waffle"
+    - "Advanced Resource Managers"
+    - "MicroTECH Global"
+    - "True North Group"
+    - "Pioneering People"
+    - "JobHeron"
+    - "Aperia"
+    - "INTEC SELECT"
+    - "Hays"
+    - "Michael Page"
+    - "Adecco"
+    - "Randstad"
+    - "SThree"
+    - "Nigel Frank"
+    - "Twenty AI"
 
 scoring:
   tailor_threshold: 70           # only tailor a CV when fit score >= this (saves tokens)
