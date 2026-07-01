@@ -144,37 +144,6 @@ class Store:
                  summary.get("rejected"), summary.get("scored"), summary.get("tailored"),
                  summary.get("stored_new"), summary.get("llm_note", "")))
 
-    def collapse_location_dupes(self) -> int:
-        """Collapse rows that are the SAME job - title + company + description signature -
-        seen across multiple locations: aggregate every location into the kept row's
-        `locations`, then delete the extras (keeping the most-progressed row). Different
-        descriptions = different roles, kept separate. Skips manually-added jobs."""
-        grp = "lower(btrim(title))||'|'||lower(btrim(company))||'|'||left(lower(coalesce(description,'')),300)"
-        order = ("CASE status WHEN 'offer' THEN 6 WHEN 'interview' THEN 5 WHEN 'applied' THEN 4 "
-                 "WHEN 'tailored' THEN 3 WHEN 'shortlisted' THEN 2 WHEN 'scored' THEN 1 ELSE 0 END DESC, "
-                 "(cv_blob IS NOT NULL) DESC, fit_score DESC, last_seen_at DESC")
-        sql = f"""
-        WITH g AS (
-          SELECT dedupe_key, {grp} AS gk,
-                 row_number() OVER (PARTITION BY {grp} ORDER BY {order}) AS rn
-          FROM jobs WHERE is_custom = FALSE
-        ), locs AS (
-          SELECT {grp} AS gk, string_agg(DISTINCT NULLIF(btrim(location),''), ', ') AS all_locs
-          FROM jobs WHERE is_custom = FALSE GROUP BY {grp}
-        )
-        UPDATE jobs j SET locations = locs.all_locs
-        FROM g JOIN locs USING (gk)
-        WHERE j.dedupe_key = g.dedupe_key AND g.rn = 1 AND COALESCE(locs.all_locs,'') <> '';
-        WITH g AS (
-          SELECT dedupe_key, row_number() OVER (PARTITION BY {grp} ORDER BY {order}) AS rn
-          FROM jobs WHERE is_custom = FALSE
-        )
-        DELETE FROM jobs WHERE dedupe_key IN (SELECT dedupe_key FROM g WHERE rn > 1);
-        """
-        with self.conn.cursor() as cur:
-            cur.execute(sql)
-            return cur.rowcount
-
     def purge_excluded(self, exclude_title: list[str], exclude_company: list[str]) -> int:
         """Delete already-stored rows that now match the exclude rules (junk stored
         before the filters existed). Skips manually-added jobs. Idempotent - safe every run."""

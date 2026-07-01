@@ -42,16 +42,12 @@ class Job:
     gaps: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
 
-    def _desc_sig(self) -> str:
-        d = _norm(self.description)
-        return d[:300] if d else _norm(self.location)
-
     def make_key(self) -> str:
-        # identity = title + company + a description signature. The SAME job reposted
-        # across many towns shares a description, so it collapses to ONE row (scored
-        # once); DIFFERENT roles from the same employer have different descriptions and
-        # stay separate. Locations are aggregated into the `locations` field.
-        base = "|".join([_norm(self.title), _norm(self.company), self._desc_sig()])
+        # identity = the posting URL. Every distinct posting has a unique URL, so we
+        # never merge two different roles. Query params are stripped so the same posting
+        # is stable across runs. Falls back to title+company+location when there's no URL.
+        u = (self.url or "").split("?")[0].rstrip("/").strip().lower()
+        base = u or "|".join([_norm(self.title), _norm(self.company), _norm(self.location)])
         return hashlib.sha256(base.encode("utf-8")).hexdigest()[:24]
 
     def finalize(self) -> "Job":

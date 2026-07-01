@@ -114,7 +114,8 @@ def _user_prompt(base_cv: dict, job: dict) -> str:
 def tailor(llm: LLM, rulebook: str, base_cv: dict, job: dict, *, max_repair: int = 1) -> TailoredCV:
     system = rulebook
     user = _user_prompt(base_cv, job)
-    data = llm.complete_json(system, user)            # 1) primary draft
+    tp, tm = llm.tailor_provider, llm.tailor_model
+    data = llm.complete_json(system, user, provider=tp, model=tm)   # 1) primary draft
     tailored = _to_tailored(data)
     ok, issues = validate(tailored)
 
@@ -132,7 +133,7 @@ def tailor(llm: LLM, rulebook: str, base_cv: dict, job: dict, *, max_repair: int
             "\n\nYour previous output failed these checks - FIX ALL and return corrected JSON:\n"
             + "\n".join("- " + i for i in issues) + ("\n" + critic_notes if critic_notes else ""))
         try:                                           # 3) primary revises
-            data = llm.complete_json(system, repair_user)
+            data = llm.complete_json(system, repair_user, provider=tp, model=tm)
             tailored = _to_tailored(data)
         except LLMError:
             pass

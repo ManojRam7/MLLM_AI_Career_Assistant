@@ -21,7 +21,7 @@ from uk_jobops.db import Store                       # noqa: E402
 
 STATUSES = ["new", "scored", "shortlisted", "tailored", "applied", "interview", "offer", "rejected"]
 
-st.set_page_config(page_title="uk-jobops", page_icon="🧭", layout="wide")
+st.set_page_config(page_title="Job Search Assistant", page_icon="🧭", layout="wide")
 
 
 def get_db_url() -> str:
@@ -81,8 +81,8 @@ def load_blobs(url: str) -> list:
 cfg = load_config()
 url = get_db_url()
 
-st.title("🧭 uk-jobops")
-st.caption("Automated UK data-science job discovery, fit-scoring and ATS CV tailoring.")
+st.title("🧭 Job Search Assistant")
+st.caption("Your automated UK data-science job hunt — discovery, fit-scoring, ATS CV tailoring and tracking.")
 
 if not url:
     st.error("No `SUPABASE_DB_URL` found. Add it to your `.env` (local) or Streamlit secrets (cloud).")
@@ -95,7 +95,7 @@ except Exception as exc:  # noqa: BLE001
     st.stop()
 
 with st.sidebar:
-    st.header("uk-jobops")
+    st.header("Job Search Assistant")
     st.metric("Jobs in database", len(jobs))
     if st.button("🔄 Refresh data", use_container_width=True):
         st.cache_data.clear()
@@ -155,10 +155,15 @@ with tab_pipeline:
     import sys as _sys
 
     st.subheader("Run the pipeline")
+    _sec = cfg.secrets
+    _can_run = bool(_sec.reed_api_key or (_sec.adzuna_app_id and _sec.adzuna_app_key))
     rc1, rc2 = st.columns([1, 3])
     mode = rc1.selectbox("Mode", ["recurring", "first"],
                          help="'first' backfills 2 weeks; 'recurring' looks at the last day")
-    if rc2.button("▶️ Run pipeline now", type="primary"):
+    if not _can_run:
+        rc2.info("Job-source API keys aren't set in this hosted app, so running here fetches nothing. "
+                 "Trigger runs from GitHub Actions (or locally) instead.")
+    if _can_run and rc2.button("▶️ Run pipeline now", type="primary"):
         with st.status("Running pipeline (this can take a few minutes)...", expanded=True) as status:
             try:
                 proc = subprocess.run([_sys.executable, "scripts/run_pipeline.py", "--mode", mode],
@@ -180,20 +185,21 @@ with tab_pipeline:
     sources = cfg.settings.get("sources", {})
     sec = cfg.secrets
 
-    st.subheader("LLM configuration (free tiers)")
+    st.subheader("LLM routing (parallel models)")
     a, b, c = st.columns(3)
-    a.metric("Primary model", f"{llm.get('primary','gemini')} · {llm.get('gemini_model','')}")
-    b.metric("Critic", llm.get("critic") or "off (saves ~50% calls)")
+    a.metric("Fit-scoring", f"{llm.get('score_provider','gemini')} · {llm.get('score_model','')}")
+    b.metric("CV tailoring", f"{llm.get('tailor_provider','gemini')} · {llm.get('tailor_model','')}")
     c.metric("Pacing", f"{llm.get('request_delay_seconds', 4)}s / call")
-    a.metric("Score cap / run", scoring.get("max_score_per_run", 40))
+    a.metric("Score cap / run", f"{scoring.get('max_score_per_run', 40)} · batch {scoring.get('score_batch_size', 8)}")
     b.metric("Tailor cap / run", scoring.get("max_tailor_per_run", 6))
     c.metric("Tailor threshold", f"fit ≥ {scoring.get('tailor_threshold', 70)}")
 
     st.subheader("Connections")
     flags = {
-        "Gemini key": bool(sec.gemini_api_key), "Groq key": bool(sec.groq_api_key),
-        "Reed key": bool(sec.reed_api_key), "Adzuna key": bool(sec.adzuna_app_id and sec.adzuna_app_key),
-        "Supabase DB": bool(sec.supabase_db_url), "Telegram": bool(sec.telegram_bot_token),
+        "Gemini": bool(sec.gemini_api_key), "DeepSeek": bool(sec.deepseek_api_key),
+        "Groq": bool(sec.groq_api_key), "Reed": bool(sec.reed_api_key),
+        "Adzuna": bool(sec.adzuna_app_id and sec.adzuna_app_key),
+        "Supabase": bool(sec.supabase_db_url), "Telegram": bool(sec.telegram_bot_token),
     }
     cols = st.columns(len(flags))
     for col, (label, ok) in zip(cols, flags.items()):

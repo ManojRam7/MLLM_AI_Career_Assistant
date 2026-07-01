@@ -72,10 +72,17 @@ bucket_list:
   path: "data/companies_bucketlist.csv"   # company_name, careers_url (replace with yours)
 
 llm:
-  primary: "gemini"              # gemini | groq | anthropic | openai
-  critic: ""                     # "" = off (saves ~half the calls). Set "groq" only if you have spare quota.
-  gemini_model: "gemini-2.0-flash"
+  primary: "gemini"              # general fallback provider
+  critic: ""                     # "" = off (saves ~half the calls)
+  # Per-task routing (parallel model usage). Each task falls back through the
+  # others if its provider has no key or errors.
+  score_provider: "deepseek"     # high-volume fit-scoring: cheap, strong, high limits
+  score_model: "deepseek-chat"
+  tailor_provider: "gemini"      # quality CV tailoring: best instruction-following
+  tailor_model: "gemini-2.5-pro"
+  gemini_model: "gemini-2.0-flash"   # default/fallback Gemini model (higher free limits)
   groq_model: "llama-3.3-70b-versatile"
+  deepseek_model: "deepseek-chat"
   max_repair_loops: 1
   request_delay_seconds: 4.0     # ~15 requests/min - respects Gemini Flash free-tier RPM
   rulebook: "config/rulebook.md"

@@ -36,6 +36,7 @@ class Secrets:
     supabase_db_url: str = ""
     gemini_api_key: str = ""
     groq_api_key: str = ""
+    deepseek_api_key: str = ""
     apify_token: str = ""
     serpapi_key: str = ""
     telegram_bot_token: str = ""
@@ -51,6 +52,7 @@ class Secrets:
             supabase_db_url=g("SUPABASE_DB_URL", ""),
             gemini_api_key=g("GEMINI_API_KEY", ""),
             groq_api_key=g("GROQ_API_KEY", ""),
+            deepseek_api_key=g("DEEPSEEK_API_KEY", ""),
             apify_token=g("APIFY_TOKEN", ""),
             serpapi_key=g("SERPAPI_KEY", ""),
             telegram_bot_token=g("TELEGRAM_BOT_TOKEN", ""),

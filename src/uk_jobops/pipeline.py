@@ -88,9 +88,6 @@ class Pipeline:
         # collapse any legacy/cross-location duplicates already in the table,
         # keeping the most-progressed row - runs BEFORE scoring so we never spend
         # LLM calls on the same role twice.
-        collapsed = store.collapse_location_dupes()
-        if collapsed:
-            summary["collapsed_location_dupes"] = collapsed
         purged = store.purge_excluded(sen.get("exclude_title", []), sen.get("exclude_company", []))
         if purged:
             summary["purged_excluded"] = purged

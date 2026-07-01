@@ -49,7 +49,7 @@ def score_fit(llm: LLM, base_cv: dict, job: dict) -> FitResult:
         'Return JSON: {"score": int, "band": "High|Medium|Low", "reasoning": "2 sentences", '
         '"ghost_flag": bool, "gaps": ["..."]}'
     )
-    return _to_result(llm.complete_json(SYSTEM, user))
+    return _to_result(llm.complete_json(SYSTEM, user, provider=llm.score_provider, model=llm.score_model))
 
 
 def score_fit_batch(llm: LLM, base_cv: dict, jobs: list[dict]) -> dict[int, FitResult]:
@@ -69,7 +69,8 @@ def score_fit_batch(llm: LLM, base_cv: dict, jobs: list[dict]) -> dict[int, FitR
         '[{"i": <job number>, "score": int, "band": "High|Medium|Low", '
         '"reasoning": "2 sentences", "ghost_flag": bool, "gaps": ["..."]}]'
     )
-    arr = _extract_array(llm.complete(SYSTEM + "\nReturn ONLY a JSON array, no prose, no code fences.", user))
+    arr = _extract_array(llm.complete(SYSTEM + "\nReturn ONLY a JSON array, no prose, no code fences.",
+                                      user, provider=llm.score_provider, model=llm.score_model))
     out: dict[int, FitResult] = {}
     for obj in arr:
         if not isinstance(obj, dict):
