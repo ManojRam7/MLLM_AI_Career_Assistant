@@ -52,6 +52,12 @@ def load_jobs(url: str) -> pd.DataFrame:
         return df
     n = len(df)
     blank = pd.Series([""] * n, index=df.index)
+    # resilient to schema drift: guarantee every column the UI reads exists
+    for _col, _def in (("tracked", False), ("in_bucket", False), ("bucket_tier", ""), ("notes", ""),
+                       ("source", ""), ("status", "new"), ("url", ""), ("cv_path", ""), ("fit_reasoning", "")):
+        if _col not in df.columns:
+            df[_col] = _def
+    df["tracked"] = df["tracked"].fillna(False).astype(bool)
     df["notes"] = df["notes"].fillna("")
     df["fit_score"] = df["fit_score"].fillna(0).astype(int)
     df["fit"] = df["fit_score"].where(df["status"] != "new")  # blank for not-yet-scored jobs
@@ -98,7 +104,7 @@ except Exception as exc:  # noqa: BLE001
 with st.sidebar:
     st.header("Job Search Assistant")
     st.metric("Jobs in database", len(jobs))
-    if st.button("🔄 Refresh data", use_container_width=True):
+    if st.button("🔄 Refresh data", width="stretch"):
         st.cache_data.clear()
         st.rerun()
     st.caption("Data refreshes every 60s, or click Refresh.")
@@ -140,7 +146,7 @@ with tab_overview:
         top_cols = ["new", "title", "company", "locations", "fit", "in_bucket", "status", "posted", "fetched", "url"]
         top = jobs[jobs["fit_score"] >= 70].head(15)
         top = top[[c for c in top_cols if c in top.columns]]
-        st.dataframe(top, hide_index=True, use_container_width=True,
+        st.dataframe(top, hide_index=True, width="stretch",
                      column_config={"url": st.column_config.LinkColumn("link", display_text="open"),
                                     "in_bucket": st.column_config.CheckboxColumn("⭐"),
                                     "new": st.column_config.CheckboxColumn("🆕"),
@@ -217,7 +223,7 @@ with tab_pipeline:
         st.info("No runs logged yet. The pipeline records each run here automatically.")
     else:
         show = runs[["run_at", "mode", "discovered", "targets", "scored", "tailored", "stored_new", "llm_note"]]
-        st.dataframe(show, hide_index=True, use_container_width=True)
+        st.dataframe(show, hide_index=True, width="stretch")
         st.line_chart(runs.set_index("run_at")[["discovered", "targets", "scored"]].iloc[::-1])
 
 # ----------------------------------------------------------------- LIVE JOBS
@@ -255,7 +261,7 @@ with tab_tracker:
         # they change (a fixed key kept stale edit-state and made filtering look broken)
         fkey = abs(hash(f"{sorted(pick)}|{sorted(srcs)}|{only_bucket}|{query}|{min_fit}"))
         edited = st.data_editor(
-            view[cols], hide_index=True, use_container_width=True, num_rows="fixed",
+            view[cols], hide_index=True, width="stretch", num_rows="fixed",
             height=680, key=f"tracker_{fkey}",
             disabled=[c for c in cols if c not in ("status", "notes")],
             column_config={
@@ -332,7 +338,7 @@ with tab_board:
         tcols = [c for c in ["keep", "title", "company", "locations", "fit", "stage", "notes", "url"]
                  if c in tv.columns]
         edited = st.data_editor(
-            tv[tcols], hide_index=True, use_container_width=True, num_rows="fixed", height=560, key="trk",
+            tv[tcols], hide_index=True, width="stretch", num_rows="fixed", height=560, key="trk",
             disabled=[c for c in tcols if c not in ("keep", "stage", "notes")],
             column_config={
                 "keep": st.column_config.CheckboxColumn("keep", width="small"),

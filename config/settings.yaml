@@ -23,6 +23,7 @@ search:
   recency_days_recurring: 1      # each 6h run looks at the last day
   recency_days_first: 14         # first run backfills 2 weeks
   max_per_source: 100
+  require_bucket: false           # strict: keep ONLY jobs from your 750 target companies (max focus)
 
 seniority:
   include:                       # role must match one of these (on the TITLE)
@@ -100,12 +101,16 @@ sources:
   adzuna: { enabled: true, country: "gb" }
   ats: { enabled: true }         # Greenhouse / Lever / Ashby for bucket-list companies
   careers_playwright: { enabled: false }
-  apify:                         # Google Jobs via Apify (LinkedIn/Indeed/Glassdoor/Totaljobs/CV-Library/boards)
+  apify:                         # Google Jobs via Apify (LinkedIn/Indeed/Glassdoor/Totaljobs/CV-Library/NHS/gov)
     enabled: true
     actor: "johnvc~google-jobs-scraper"
-    top_companies_per_run: 5     # rotating sample of top-100 target companies searched each run
-    num_results: 50
-    max_queries: 6               # generic DS queries + company queries, capped for cost/time
+    top_companies_per_run: 6     # rotating sample of top-100 target companies searched each run
+    num_results: 80
+    max_queries: 10              # extra + generic + company queries, capped for cost/time
+    extra_queries:               # always-run, high-value searches that Reed/Adzuna miss
+      - "data scientist NHS"
+      - "data scientist civil service UK"
+      - "data scientist UK government"
   serpapi: { enabled: false }    # paid
 
 bucket_list:

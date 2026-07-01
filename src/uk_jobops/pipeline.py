@@ -41,7 +41,8 @@ class Pipeline:
                 self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_bucketlist.csv")),
                 actor=ap.get("actor", "johnvc~google-jobs-scraper"),
                 top_companies_per_run=ap.get("top_companies_per_run", 5),
-                num_results=ap.get("num_results", 50), max_queries=ap.get("max_queries", 6)))
+                num_results=ap.get("num_results", 50), max_queries=ap.get("max_queries", 6),
+                extra_queries=ap.get("extra_queries", [])))
         return out
 
     def discover(self, recency_days: int):
@@ -75,10 +76,21 @@ class Pipeline:
             j.bucket_tier = bucket_tier(j.company, tiers)
             j.in_bucket = bool(j.bucket_tier)
 
+        # strict mode: keep ONLY jobs from bucket-list target companies (max focus)
+        bucket_only_dropped = 0
+        if self.s.get("search", {}).get("require_bucket", False):
+            _before = len(targets)
+            targets = [j for j in targets if j.in_bucket]
+            bucket_only_dropped = _before - len(targets)
+
         summary = {"mode": mode, "discovered": len(raw), "targets": len(targets),
                    "rejected": len(rejected), "bucket_matches": sum(1 for j in targets if j.in_bucket),
                    "top100_matches": sum(1 for j in targets if j.bucket_tier == "top100"),
+                   "bucket_only_dropped": bucket_only_dropped,
                    "sources": statuses, "scored": 0, "tailored": 0}
+        _ap = self.s.get("sources", {}).get("apify", {})
+        summary["companies_searched"] = (_ap.get("top_companies_per_run", 0)
+                                         if _ap.get("enabled") and self.cfg.secrets.apify_tokens else 0)
 
         # snapshot for offline inspection
         Path("output").mkdir(exist_ok=True)
@@ -201,10 +213,14 @@ class Pipeline:
             first_name = (self.s.get("candidate", {}).get("name", "there") or "there").split()[0]
             hb_ok, hb_detail = True, "off"
             if ncfg.get("heartbeat", True):
+                src_line = " · ".join(f"{s.get('source', '?').split()[0]} {s.get('count', 0)}"
+                                      for s in summary.get("sources", []))
                 hb = (f"🔔 *Job Search Assistant* — run complete\n"
                       f"Discovered {summary.get('discovered', 0)} · new {summary.get('stored_new', 0)} · "
                       f"scored {summary.get('scored', 0)} · tailored {summary.get('tailored', 0)}\n"
-                      f"New alerts below: {len(alerts)}")
+                      + (f"📥 {src_line}\n" if src_line else "")
+                      + f"🔎 {summary.get('companies_searched', 0)} target companies searched · "
+                      + f"{len(alerts)} new alerts below")
                 if summary.get("llm_note"):
                     hb += f"\n⚠️ {summary['llm_note']}"
                 hb_ok, hb_detail = notify.send_message(tg.telegram_bot_token, tg.telegram_chat_id, hb)

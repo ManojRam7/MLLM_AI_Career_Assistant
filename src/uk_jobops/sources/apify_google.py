@@ -18,18 +18,20 @@ class ApifyGoogleSource(Source):
     name = "Google (Apify)"
 
     def __init__(self, tokens, bucket_path=None, *, actor="johnvc~google-jobs-scraper",
-                 top_companies_per_run=5, num_results=50, max_queries=6):
+                 top_companies_per_run=5, num_results=50, max_queries=6, extra_queries=None):
         self.tokens = [t for t in (tokens or []) if t]
         self.bucket_path = bucket_path
         self.actor = actor
         self.top_companies_per_run = top_companies_per_run
         self.num_results = num_results
         self.max_queries = max_queries
+        self.extra_queries = list(extra_queries or [])
 
     def fetch(self, *, queries, locations, recency_days, limit) -> SourceResult:
         if not self.tokens:
             return SourceResult(self.name, status="skipped", message="no APIFY tokens set")
-        q_list = list(dict.fromkeys(queries[:3]))  # a few generic DS queries
+        # high-value always-run queries (NHS/civil service/gov) + a couple of generic ones
+        q_list = list(dict.fromkeys(self.extra_queries + list(queries[:2])))
         if self.bucket_path:
             from ..bucketlist import sample_top_companies
             for c in sample_top_companies(self.bucket_path, self.top_companies_per_run):
