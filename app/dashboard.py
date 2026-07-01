@@ -206,6 +206,9 @@ with tab_pipeline:
         col.markdown(f"**{'🟢' if ok else '⚪'} {label}**")
     enabled = [k for k, v in sources.items() if isinstance(v, dict) and v.get("enabled")]
     st.caption("Active sources: " + (", ".join(enabled) or "none"))
+    st.caption("ℹ️ This hosted app only needs Supabase (it reads the database). Your LLM and "
+               "job-source keys live in GitHub Actions, where the pipeline actually runs — so the "
+               "other lights being grey here is normal.")
 
     st.subheader("Recent pipeline runs")
     runs = load_runs(url)
