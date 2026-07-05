@@ -3,21 +3,29 @@
 candidate:
   name: "Manoj Ram Mopati"
   base_cv: "src/uk_jobops/cv/base_cv.json"   # your real experience (single source of truth)
+  profile: "data/profile.json"               # your preferences + scoring rubric (edit the FILL fields)
   right_to_work: "UK Graduate visa (eligible to work in the UK without sponsorship)"
   locations_base: "Birmingham, UK"
   open_to_relocation: true
 
 search:
   queries:
+    # --- category 1: DATA SCIENCE ---
     - "data scientist"
     - "machine learning engineer"
     - "marketing data scientist"
     - "associate data scientist"
     - "junior data scientist"
     - "graduate data scientist"
-    - "data science analyst"
     - "applied scientist"
     - "AI engineer"
+    # --- category 2: DATA ANALYSIS ---
+    - "data analyst"
+    - "data analytics"
+    - "analytics engineer"
+    - "business intelligence analyst"
+    - "insight analyst"
+    - "data science analyst"
   locations: ["United Kingdom", "London", "Birmingham", "Manchester", "Edinburgh",
               "Glasgow", "Leeds", "Bristol", "Remote UK"]
   recency_days_recurring: 7      # rolling week window so nothing recent is missed between runs
@@ -26,15 +34,28 @@ search:
   require_bucket: false           # strict: keep ONLY jobs from your 750 target companies (max focus)
 
 seniority:
-  include:                       # role must match one of these (on the TITLE)
+  include:                       # role must match one of these (on the TITLE); covers BOTH categories
+    # data science
     - "data scientist"
     - "machine learning engineer"
+    - "ml engineer"
     - "associate data scientist"
     - "junior data scientist"
     - "graduate data scientist"
-    - "data science analyst"
     - "applied scientist"
     - "ai engineer"
+    - "decision scientist"
+    # data analysis
+    - "data analyst"
+    - "data analytics"
+    - "analytics engineer"
+    - "business intelligence analyst"
+    - "bi analyst"
+    - "insight analyst"
+    - "insights analyst"
+    - "reporting analyst"
+    - "mi analyst"
+    - "data science analyst"
   exclude_title:                 # drop these (whole-word, IC-level only)
     - "senior"
     - "sr"
@@ -87,9 +108,9 @@ seniority:
 scoring:
   tailor_threshold: 70           # only tailor a CV when fit score >= this (saves tokens)
   shortlist_threshold: 60
-  max_score_per_run: 120         # DeepSeek is cheap + batched, so score a big backlog each run
+  max_score_per_run: 150         # DeepSeek (paid credits) is cheap + batched, so score a big backlog each run
   score_batch_size: 8            # jobs scored per LLM call (fewer calls + tokens; clears backlog faster)
-  max_tailor_per_run: 6          # cap CV tailoring per run; the backlog clears over runs
+  max_tailor_per_run: 8          # Gemini via Google AI Pro has expanded limits, so tailor a few more per run
 
 notify:
   min_fit: 75                    # only send a Telegram alert for jobs at/above this fit
@@ -104,34 +125,62 @@ sources:
   apify:                         # Google Jobs via Apify (LinkedIn/Indeed/Glassdoor/Totaljobs/CV-Library/NHS/gov)
     enabled: true
     actor: "johnvc~google-jobs-scraper"
-    top_companies_per_run: 8     # rotating sample of top-100 target companies searched each run
-    num_results: 120             # deep pagination so more of the market is captured
-    max_queries: 16              # extra + generic + company queries, capped for cost/time
-    extra_queries:               # always-run broad + government searches Reed/Adzuna miss
+    top_companies_per_run: 5     # rotating sample of target companies; each yields a DS + a DA query
+    num_results: 80              # deep pagination so more of the market is captured (trimmed to save free credits)
+    max_queries: 24              # extra(12) + generic(2) + company(5x2=10) queries, capped for cost/time
+    extra_queries:               # always-run broad + government searches Reed/Adzuna miss (both categories)
+      # data science (broad + gov)
       - "data scientist United Kingdom"
       - "machine learning engineer United Kingdom"
       - "data scientist NHS"
       - "data scientist civil service"
       - "data scientist UK government"
-      - "data analyst civil service"
       - "AI engineer United Kingdom"
+      # data analysis (broad + government emphasis - civil service opens many analyst roles)
+      - "data analyst United Kingdom"
+      - "data analytics United Kingdom"
+      - "data analyst civil service"
+      - "data analyst NHS"
+      - "data analyst UK government"
+      - "business intelligence analyst United Kingdom"
+  gov:                           # government portals: NHS Jobs + Civil Service Jobs
+    enabled: true                # Civil Service Jobs covers ~100 civil-service employers in one search
+    queries: ["data analyst", "data scientist", "data engineer"]
+    max_pages: 2
+    civil_service_sectors: ["Civil Services"]     # run Civil Service Jobs on this sector's run
+    nhs_sectors: ["Insurance & Health"]           # run NHS Jobs on this sector's run
   serpapi: { enabled: false }    # paid
 
 bucket_list:
-  path: "data/companies_bucketlist.csv"   # company_name, careers_url (replace with yours)
+  path: "data/companies_master.csv"       # 1165 target companies across 7 sectors (Master List)
+
+rotation:                        # one sector per scheduled run; all 7 covered once/day with time gaps
+  enabled: true
+  sectors:                       # order maps to schedule_hours_utc below (index 0 also does the broad sweep)
+    - "Civil Services"
+    - "Banking"
+    - "Retail & E-Com"
+    - "Product Based-Tech Companies"
+    - "Insurance & Health"
+    - "Energy Transport and Manufact"
+    - "Service Based Tech companies"
+  schedule_hours_utc: [6, 8, 10, 12, 14, 16, 18]   # `--sector auto` maps the current UTC hour -> sector
+  apify_broad_on_index: 0        # broad market sweep (Reed/Adzuna + broad Apify/gov) runs only on this sector
 
 llm:
+  # Tier reality: DeepSeek = paid credits (cheap, bulk scoring); Gemini = Google AI Pro
+  # plan (expanded AI Studio API limits, quality tailoring); Groq = free fallback.
   primary: "gemini"              # general fallback provider
   critic: ""                     # "" = off (saves ~half the calls)
   # Per-task routing (parallel model usage). Each task falls back through the
   # others if its provider has no key or errors.
-  score_provider: "deepseek"     # high-volume fit-scoring: cheap, strong, high limits
+  score_provider: "deepseek"     # high-volume fit-scoring: cheap paid credits, strong, high limits
   score_model: "deepseek-chat"
-  tailor_provider: "gemini"      # quality CV tailoring: best instruction-following
+  tailor_provider: "gemini"      # quality CV tailoring: best instruction-following (AI Pro expanded limits)
   tailor_model: "gemini-2.5-pro"
-  gemini_model: "gemini-2.0-flash"   # default/fallback Gemini model (higher free limits)
+  gemini_model: "gemini-2.0-flash"   # default/fallback Gemini model (higher limits)
   groq_model: "llama-3.3-70b-versatile"
   deepseek_model: "deepseek-chat"
   max_repair_loops: 1
-  request_delay_seconds: 4.0     # ~15 requests/min - respects Gemini Flash free-tier RPM
+  request_delay_seconds: 2.5     # scoring runs on DeepSeek; Gemini tailoring has AI Pro expanded limits
   rulebook: "config/rulebook.md"

@@ -28,6 +28,7 @@ class Job:
     first_seen_at: str = ""
     fetched_at: str = ""
     seniority: str = ""
+    category: str = ""           # "data-science" | "data-analysis" | "" (derived from title)
     is_target: bool = True
     fit_score: int = 0
     fit_reasoning: str = ""

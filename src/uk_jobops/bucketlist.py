@@ -61,16 +61,54 @@ def is_bucket(company: str, tiers) -> bool:
     return bool(bucket_tier(company, {c: "master" for c in tiers}))
 
 
-def sample_top_companies(path: str | Path, n: int = 5) -> list[str]:
-    """A random sample of top-100 company names, for rotating per-run targeted search."""
+def list_sectors(path: str | Path) -> list[str]:
+    """Unique sector names in file order (the 7 Master List sheets)."""
     p = Path(path)
     if not p.exists():
         return []
-    tops: list[str] = []
+    seen: list[str] = []
     with p.open(encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f):
+            s = (row.get("sector") or "").strip()
+            if s and s not in seen:
+                seen.append(s)
+    return seen
+
+
+def companies_in_sector(path: str | Path, sector: str | None = None) -> list[tuple[str, str]]:
+    """[(company_name, careers_url)] optionally filtered to one sector."""
+    p = Path(path)
+    if not p.exists():
+        return []
+    out: list[tuple[str, str]] = []
+    with p.open(encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f):
+            name = (row.get("company_name") or "").strip()
+            url = (row.get("careers_url") or "").strip()
+            if not name:
+                continue
+            if sector and (row.get("sector") or "").strip().lower() != sector.strip().lower():
+                continue
+            out.append((name, url))
+    return out
+
+
+def sample_top_companies(path: str | Path, n: int = 5, sector: str | None = None) -> list[str]:
+    """A random sample of target company names for rotating per-run search. Filters to a
+    sector when given; prefers tier=top100 if the file has it, else samples from all."""
+    p = Path(path)
+    if not p.exists():
+        return []
+    tops, allc = [], []
+    with p.open(encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f):
+            name = (row.get("company_name") or "").strip()
+            if not name:
+                continue
+            if sector and (row.get("sector") or "").strip().lower() != sector.strip().lower():
+                continue
+            allc.append(name)
             if (row.get("tier") or "").strip() == "top100":
-                name = (row.get("company_name") or "").strip()
-                if name:
-                    tops.append(name)
-    return random.sample(tops, min(n, len(tops))) if tops else []
+                tops.append(name)
+    pool = tops or allc
+    return random.sample(pool, min(n, len(pool))) if pool else []

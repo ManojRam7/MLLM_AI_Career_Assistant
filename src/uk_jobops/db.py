@@ -54,6 +54,7 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS locations TEXT DEFAULT '';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS bucket_tier TEXT DEFAULT '';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS notified BOOLEAN DEFAULT FALSE;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS tracked BOOLEAN DEFAULT FALSE;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS category TEXT DEFAULT '';
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_fit_idx ON jobs(fit_score DESC);
 
@@ -71,13 +72,14 @@ ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS summary_json JSONB;
 
 UPSERT = """
 INSERT INTO jobs (dedupe_key,title,company,location,locations,url,description,posted_date,salary,remote,
-                  source,source_query,seniority,is_target,in_bucket,bucket_tier,first_seen_at,last_seen_at,is_custom,status)
+                  source,source_query,seniority,category,is_target,in_bucket,bucket_tier,first_seen_at,last_seen_at,is_custom,status)
 VALUES (%(dedupe_key)s,%(title)s,%(company)s,%(location)s,%(locations)s,%(url)s,%(description)s,%(posted_date)s,
-        %(salary)s,%(remote)s,%(source)s,%(source_query)s,%(seniority)s,%(is_target)s,%(in_bucket)s,%(bucket_tier)s,
+        %(salary)s,%(remote)s,%(source)s,%(source_query)s,%(seniority)s,%(category)s,%(is_target)s,%(in_bucket)s,%(bucket_tier)s,
         %(first_seen_at)s,%(last_seen_at)s,%(is_custom)s,%(status)s)
 ON CONFLICT (dedupe_key) DO UPDATE SET
     last_seen_at = EXCLUDED.last_seen_at,
     in_bucket = jobs.in_bucket OR EXCLUDED.in_bucket,
+    category = COALESCE(NULLIF(EXCLUDED.category,''), jobs.category),
     bucket_tier = COALESCE(NULLIF(EXCLUDED.bucket_tier,''), jobs.bucket_tier),
     locations = CASE WHEN length(COALESCE(EXCLUDED.locations,'')) > length(COALESCE(jobs.locations,''))
                      THEN EXCLUDED.locations ELSE jobs.locations END,
@@ -157,7 +159,7 @@ class Store:
 
     def jobs_to_notify(self, min_fit: int = 75, limit: int = 10) -> list[dict[str, Any]]:
         return self._rows(
-            "SELECT dedupe_key,title,company,location,locations,fit_score,fit_reasoning,url,in_bucket,bucket_tier "
+            "SELECT dedupe_key,title,company,location,locations,fit_score,fit_reasoning,url,in_bucket,bucket_tier,category "
             "FROM jobs WHERE notified=FALSE AND is_target=TRUE AND fit_score >= %s "
             "ORDER BY (bucket_tier='top100') DESC, fit_score DESC LIMIT %s", (min_fit, limit))
 
@@ -229,7 +231,7 @@ class Store:
 
     def all_jobs(self, limit: int = 2000) -> list[dict[str, Any]]:
         return self._rows(
-            "SELECT dedupe_key,title,company,location,locations,source,in_bucket,bucket_tier,fit_score,seniority,status,"
+            "SELECT dedupe_key,title,company,location,locations,source,in_bucket,bucket_tier,category,fit_score,seniority,status,"
             "tracked,is_custom,notes,applied_at,url,cv_path,cover_path,fit_reasoning,ghost_flag,posted_date,first_seen_at "
             "FROM jobs ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, fit_score DESC, first_seen_at DESC LIMIT %s",
             (limit,))

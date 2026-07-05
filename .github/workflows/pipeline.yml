@@ -1,13 +1,22 @@
 name: jobops-pipeline
 
 on:
-  schedule:
-    - cron: "0 */6 * * *"      # every 6 hours (UTC)
+  schedule:                     # one sector per run, all 7 once/day with gaps (UTC). --sector auto maps hour->sector
+    - cron: "10 6 * * *"        # Civil Services (also the daily broad market sweep)
+    - cron: "10 8 * * *"        # Banking
+    - cron: "10 10 * * *"       # Retail & E-Com
+    - cron: "10 12 * * *"       # Product Based-Tech Companies
+    - cron: "10 14 * * *"       # Insurance & Health
+    - cron: "10 16 * * *"       # Energy Transport and Manufact
+    - cron: "10 18 * * *"       # Service Based Tech companies
   workflow_dispatch:
     inputs:
       mode:
         description: "first (2-week backfill) or recurring (last day)"
         default: "recurring"
+      sector:
+        description: "sector name, 'auto' (by UTC hour), or 'full' (all sources, no focus)"
+        default: "auto"
 
 permissions:
   contents: read
@@ -39,7 +48,10 @@ jobs:
           APIFY_TOKEN_4: ${{ secrets.APIFY_TOKEN_4 }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python scripts/run_pipeline.py --mode "${{ github.event.inputs.mode || 'recurring' }}"
+        run: >-
+          python scripts/run_pipeline.py
+          --mode "${{ github.event.inputs.mode || 'recurring' }}"
+          --sector "${{ github.event.inputs.sector || 'auto' }}"
 
       - name: Upload tailored CVs + digest
         if: always()

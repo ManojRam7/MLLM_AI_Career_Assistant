@@ -99,10 +99,13 @@ def _to_tailored(d: dict) -> TailoredCV:
     )
 
 
-def _user_prompt(base_cv: dict, job: dict) -> str:
+def _user_prompt(base_cv: dict, job: dict, profile: dict | None = None) -> str:
+    prof = (f"CANDIDATE PREFERENCES (emphasise these truthfully, never invent):\n{json.dumps(profile)}\n\n"
+            if profile else "")
     return (
         "BASE CV (the ONLY source of truth - never invent beyond this):\n"
         f"{json.dumps(base_cv, ensure_ascii=False)}\n\n"
+        + prof +
         "JOB TO TAILOR FOR:\n"
         f"Title: {job.get('title')}\nCompany: {job.get('company')}\n"
         f"Location: {job.get('location')}\nDescription:\n{(job.get('description') or '')[:2500]}\n\n"
@@ -111,9 +114,10 @@ def _user_prompt(base_cv: dict, job: dict) -> str:
     )
 
 
-def tailor(llm: LLM, rulebook: str, base_cv: dict, job: dict, *, max_repair: int = 1) -> TailoredCV:
+def tailor(llm: LLM, rulebook: str, base_cv: dict, job: dict, *, max_repair: int = 1,
+           profile: dict | None = None) -> TailoredCV:
     system = rulebook
-    user = _user_prompt(base_cv, job)
+    user = _user_prompt(base_cv, job, profile)
     tp, tm = llm.tailor_provider, llm.tailor_model
     data = llm.complete_json(system, user, provider=tp, model=tm)   # 1) primary draft
     tailored = _to_tailored(data)

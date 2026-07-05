@@ -31,6 +31,23 @@ _RECRUITER = re.compile(
     r"\b(recruit\w*|staffing|resourc\w*|rpo|headhunt\w*|talent solutions|"
     r"talent acquisition|executive search|search partners)\b", re.I)
 
+# Two co-primary job categories, decided on the title. Data-science signals win when
+# both appear (e.g. "data science analyst" -> data-science).
+_DS_CAT = re.compile(r"\b(data scientist|scientist|machine learning|ml engineer|"
+                     r"ai engineer|applied scientist|decision scientist|data science)\b", re.I)
+_DA_CAT = re.compile(r"\b(data analyst|data analytics|analytics engineer|business intelligence|"
+                     r"bi analyst|insight\w*|reporting analyst|mi analyst|analytics|analyst)\b", re.I)
+
+
+def job_category(title: str) -> str:
+    """Return 'data-science' | 'data-analysis' | '' from the job title."""
+    t = title or ""
+    if _DS_CAT.search(t):
+        return "data-science"
+    if _DA_CAT.search(t):
+        return "data-analysis"
+    return ""
+
 
 def apply_filters(jobs: list[Job], include: list[str], exclude_title: list[str],
                   exclude_company: list[str] | None = None,
@@ -47,6 +64,7 @@ def apply_filters(jobs: list[Job], include: list[str], exclude_title: list[str],
         elif ok and exclude_recruiters and _RECRUITER.search(company):
             ok, label = False, "recruiter"
         j.seniority = label
+        j.category = job_category(j.title)
         j.is_target = ok
         (targets if ok else rejected).append(j)
     return targets, rejected

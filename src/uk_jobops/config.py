@@ -69,6 +69,7 @@ class Config:
     settings: dict[str, Any]
     secrets: Secrets
     base_cv: dict[str, Any]
+    profile: dict[str, Any] = field(default_factory=dict)
 
     @property
     def root(self) -> Path:
@@ -82,4 +83,9 @@ def load_config(settings_path: str = "config/settings.yaml") -> Config:
     settings = yaml.safe_load(_resolve(settings_path).read_text(encoding="utf-8")) or {}
     base_cv_rel = settings.get("candidate", {}).get("base_cv", "src/uk_jobops/cv/base_cv.json")
     base_cv = json.loads(_resolve(base_cv_rel).read_text(encoding="utf-8"))
-    return Config(settings=settings, secrets=Secrets.from_env(), base_cv=base_cv)
+    prof_rel = settings.get("candidate", {}).get("profile", "data/profile.json")
+    try:
+        profile = json.loads(_resolve(prof_rel).read_text(encoding="utf-8"))
+    except Exception:
+        profile = {}
+    return Config(settings=settings, secrets=Secrets.from_env(), base_cv=base_cv, profile=profile)

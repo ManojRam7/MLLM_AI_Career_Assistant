@@ -21,46 +21,66 @@ class Pipeline:
         self.cfg = cfg
         self.s = cfg.settings
 
-    def _sources(self):
+    def _sources(self, sector: str | None = None, run_broad: bool = True):
         sec = self.cfg.secrets
         src_cfg = self.s.get("sources", {})
+        bucket_path = self.s.get("bucket_list", {}).get("path", "data/companies_master.csv")
         out = []
-        if src_cfg.get("reed", {}).get("enabled"):
+        # Broad market APIs (Reed/Adzuna) refresh the whole UK market - run only on the
+        # designated broad run so a 7x/day sector rotation doesn't burn their daily quotas.
+        if run_broad and src_cfg.get("reed", {}).get("enabled"):
             out.append(ReedSource(sec.reed_api_key))
-        if src_cfg.get("adzuna", {}).get("enabled"):
+        if run_broad and src_cfg.get("adzuna", {}).get("enabled"):
             out.append(AdzunaSource(sec.adzuna_app_id, sec.adzuna_app_key,
                                     src_cfg.get("adzuna", {}).get("country", "gb")))
+        # ATS scans this sector's companies (free, accurate) - every sector run.
         if src_cfg.get("ats", {}).get("enabled"):
-            out.append(ATSSource(self.s.get("bucket_list", {}).get("path", "data/companies_bucketlist.csv"),
-                                 self.s.get("seniority", {}).get("include", [])))
+            out.append(ATSSource(bucket_path, self.s.get("seniority", {}).get("include", []), sector=sector))
+        # Government portals: NHS Jobs + Civil Service Jobs. Run when relevant to the sector,
+        # or on any broad run. Civil Service covers ~100 civil-service employers in one search.
+        gov = src_cfg.get("gov", {})
+        if gov.get("enabled"):
+            from .sources.gov import CivilServiceJobsSource, NHSJobsSource
+            gq = gov.get("queries", ["data analyst", "data scientist"])
+            cs_sectors = [s.lower() for s in gov.get("civil_service_sectors", ["civil services"])]
+            nhs_sectors = [s.lower() for s in gov.get("nhs_sectors", ["insurance & health"])]
+            if run_broad or (sector and sector.lower() in cs_sectors):
+                out.append(CivilServiceJobsSource(queries=gq, max_pages=gov.get("max_pages", 2)))
+            if run_broad or (sector and sector.lower() in nhs_sectors):
+                out.append(NHSJobsSource(queries=gq, max_pages=gov.get("max_pages", 2)))
         ap = src_cfg.get("apify", {})
         if ap.get("enabled") and sec.apify_tokens:
             from .sources.apify_google import ApifyGoogleSource
             out.append(ApifyGoogleSource(
-                sec.apify_tokens,
-                self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_bucketlist.csv")),
+                sec.apify_tokens, self.cfg.path(bucket_path),
                 actor=ap.get("actor", "johnvc~google-jobs-scraper"),
                 top_companies_per_run=ap.get("top_companies_per_run", 5),
                 num_results=ap.get("num_results", 50), max_queries=ap.get("max_queries", 6),
-                extra_queries=ap.get("extra_queries", [])))
+                extra_queries=ap.get("extra_queries", []), sector=sector, run_broad=run_broad))
         return out
 
-    def discover(self, recency_days: int):
+    def discover(self, recency_days: int, sector: str | None = None, run_broad: bool = True):
         search = self.s.get("search", {})
         jobs, statuses = [], []
-        for src in self._sources():
+        for src in self._sources(sector, run_broad):
             res = src.fetch(queries=search.get("queries", []), locations=search.get("locations", []),
                             recency_days=recency_days, limit=search.get("max_per_source", 100))
             jobs.extend(res.jobs)
             statuses.append({"source": res.source, "status": res.status, "count": len(res.jobs), "message": res.message})
         return jobs, statuses
 
-    def run(self, mode: str = "recurring") -> dict:
+    def run(self, mode: str = "recurring", sector: str | None = None) -> dict:
         search = self.s.get("search", {})
         recency = search.get("recency_days_first", 14) if mode == "first" else search.get("recency_days_recurring", 1)
         scoring = self.s.get("scoring", {})
 
-        raw, statuses = self.discover(recency)
+        rot = self.s.get("rotation", {})
+        sectors = rot.get("sectors", [])
+        broad_index = rot.get("apify_broad_on_index", 0)
+        # On a 7x/day sector rotation, run the broad market sweep (Reed/Adzuna + broad Apify/gov)
+        # only on one sector's run; the other six focus purely on their sector's companies.
+        run_broad = True if not (sector and sector in sectors) else (sectors.index(sector) == broad_index)
+        raw, statuses = self.discover(recency, sector=sector, run_broad=run_broad)
         normalize(raw)
         sen = self.s.get("seniority", {})
         targets, rejected = apply_filters(raw, sen.get("include", []), sen.get("exclude_title", []),
@@ -83,14 +103,22 @@ class Pipeline:
             targets = [j for j in targets if j.in_bucket]
             bucket_only_dropped = _before - len(targets)
 
-        summary = {"mode": mode, "discovered": len(raw), "targets": len(targets),
+        summary = {"mode": mode, "sector": sector or "ALL", "run_broad": run_broad,
+                   "discovered": len(raw), "targets": len(targets),
                    "rejected": len(rejected), "bucket_matches": sum(1 for j in targets if j.in_bucket),
                    "top100_matches": sum(1 for j in targets if j.bucket_tier == "top100"),
+                   "category_data_science": sum(1 for j in targets if j.category == "data-science"),
+                   "category_data_analysis": sum(1 for j in targets if j.category == "data-analysis"),
                    "bucket_only_dropped": bucket_only_dropped,
                    "sources": statuses, "scored": 0, "tailored": 0}
-        _ap = self.s.get("sources", {}).get("apify", {})
-        summary["companies_searched"] = (_ap.get("top_companies_per_run", 0)
-                                         if _ap.get("enabled") and self.cfg.secrets.apify_tokens else 0)
+        if sector:
+            from .bucketlist import companies_in_sector
+            summary["companies_searched"] = len(companies_in_sector(
+                self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_master.csv")), sector))
+        else:
+            _ap = self.s.get("sources", {}).get("apify", {})
+            summary["companies_searched"] = (_ap.get("top_companies_per_run", 0)
+                                             if _ap.get("enabled") and self.cfg.secrets.apify_tokens else 0)
 
         # snapshot for offline inspection
         Path("output").mkdir(exist_ok=True)
@@ -145,7 +173,7 @@ class Pipeline:
             for start in range(0, len(to_score), bsize):
                 chunk = to_score[start:start + bsize]
                 try:
-                    results = score_fit_batch(llm, self.cfg.base_cv, chunk)
+                    results = score_fit_batch(llm, self.cfg.base_cv, chunk, self.cfg.profile)
                 except LLMError as exc:
                     errors.append(str(exc)[:140])
                     if _rate_limited(exc):
@@ -156,7 +184,7 @@ class Pipeline:
                     results = {}
                     for idx, job in enumerate(chunk):
                         try:
-                            results[idx] = score_fit(llm, self.cfg.base_cv, job)
+                            results[idx] = score_fit(llm, self.cfg.base_cv, job, self.cfg.profile)
                         except LLMError as exc2:
                             if _rate_limited(exc2):
                                 llm_exhausted = True
@@ -181,7 +209,8 @@ class Pipeline:
                         if tailor_jobs else "")
             for job in tailor_jobs:
                 try:
-                    t = tailor(llm, rulebook, self.cfg.base_cv, job, max_repair=lc.get("max_repair_loops", 1))
+                    t = tailor(llm, rulebook, self.cfg.base_cv, job, max_repair=lc.get("max_repair_loops", 1),
+                           profile=self.cfg.profile)
                 except LLMError as exc:
                     errors.append(str(exc)[:140])
                     if _rate_limited(exc):
@@ -215,10 +244,14 @@ class Pipeline:
             if ncfg.get("heartbeat", True):
                 src_line = " · ".join(f"{s.get('source', '?').split()[0]} {s.get('count', 0)}"
                                       for s in summary.get("sources", []))
-                hb = (f"🔔 *Job Search Assistant* — run complete\n"
+                _title = (f"✅ *{sector} sector* complete" if sector
+                          else "🔔 *Job Search Assistant* — run complete")
+                hb = (f"{_title}\n"
                       f"Discovered {summary.get('discovered', 0)} · new {summary.get('stored_new', 0)} · "
                       f"scored {summary.get('scored', 0)} · tailored {summary.get('tailored', 0)}\n"
                       + (f"📥 {src_line}\n" if src_line else "")
+                      + f"🧭 DS {summary.get('category_data_science', 0)} · "
+                      + f"DA {summary.get('category_data_analysis', 0)}\n"
                       + f"🔎 {summary.get('companies_searched', 0)} target companies searched · "
                       + f"{len(alerts)} new alerts below")
                 if summary.get("llm_note"):
@@ -237,5 +270,5 @@ class Pipeline:
         return summary
 
 
-def run(mode: str = "recurring") -> dict:
-    return Pipeline(load_config()).run(mode)
+def run(mode: str = "recurring", sector: str | None = None) -> dict:
+    return Pipeline(load_config()).run(mode, sector)

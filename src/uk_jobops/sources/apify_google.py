@@ -18,7 +18,8 @@ class ApifyGoogleSource(Source):
     name = "Google (Apify)"
 
     def __init__(self, tokens, bucket_path=None, *, actor="johnvc~google-jobs-scraper",
-                 top_companies_per_run=5, num_results=50, max_queries=6, extra_queries=None):
+                 top_companies_per_run=5, num_results=50, max_queries=6, extra_queries=None,
+                 sector=None, run_broad=True):
         self.tokens = [t for t in (tokens or []) if t]
         self.bucket_path = bucket_path
         self.actor = actor
@@ -26,17 +27,26 @@ class ApifyGoogleSource(Source):
         self.num_results = num_results
         self.max_queries = max_queries
         self.extra_queries = list(extra_queries or [])
+        self.sector = sector           # limit per-company sampling to one sector (rotation)
+        self.run_broad = run_broad      # broad market extra_queries only on the designated run (saves credits)
 
     def fetch(self, *, queries, locations, recency_days, limit) -> SourceResult:
         if not self.tokens:
             return SourceResult(self.name, status="skipped", message="no APIFY tokens set")
-        # high-value always-run queries (NHS/civil service/gov) + a couple of generic ones
-        q_list = list(dict.fromkeys(self.extra_queries + list(queries[:2])))
+        # Broad market queries (NHS/civil service/gov + generic, both categories) run only on
+        # the designated broad run to save free credits. Every run then adds a rotating sample
+        # of its sector's companies, each searched for BOTH categories (data scientist AND analyst).
+        q_list: list[str] = []
+        if self.run_broad:
+            q_list = list(dict.fromkeys(self.extra_queries + list(queries[:2])))
         if self.bucket_path:
             from ..bucketlist import sample_top_companies
-            for c in sample_top_companies(self.bucket_path, self.top_companies_per_run):
+            for c in sample_top_companies(self.bucket_path, self.top_companies_per_run, self.sector):
                 q_list.append(f"{c} data scientist")
-        q_list = q_list[:self.max_queries]
+                q_list.append(f"{c} data analyst")
+        q_list = list(dict.fromkeys(q_list))[:self.max_queries]
+        if not q_list:
+            return SourceResult(self.name, status="skipped", message="no queries for this run")
 
         jobs: list[Job] = []
         errors = 0

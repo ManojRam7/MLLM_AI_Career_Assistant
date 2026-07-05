@@ -36,14 +36,17 @@ def _extract_array(text: str) -> list:
     raise LLMError("model did not return a JSON array")
 
 
-def _candidate(base_cv: dict) -> str:
-    return (f"CANDIDATE (real experience):\n{json.dumps(base_cv.get('profile_facts'))}\n"
-            f"Skills: {json.dumps(base_cv.get('skills'))}\n\n")
+def _candidate(base_cv: dict, profile: dict | None = None) -> str:
+    s = (f"CANDIDATE (real experience):\n{json.dumps(base_cv.get('profile_facts'))}\n"
+         f"Skills: {json.dumps(base_cv.get('skills'))}\n")
+    if profile:
+        s += f"\nCANDIDATE PREFERENCES & SCORING RUBRIC (judge the fit against this):\n{json.dumps(profile)}\n"
+    return s + "\n"
 
 
-def score_fit(llm: LLM, base_cv: dict, job: dict) -> FitResult:
+def score_fit(llm: LLM, base_cv: dict, job: dict, profile: dict | None = None) -> FitResult:
     user = (
-        _candidate(base_cv) +
+        _candidate(base_cv, profile) +
         f"JOB:\nTitle: {job.get('title')}\nCompany: {job.get('company')}\n"
         f"Location: {job.get('location')}\nDescription:\n{(job.get('description') or '')[:2000]}\n\n"
         'Return JSON: {"score": int, "band": "High|Medium|Low", "reasoning": "2 sentences", '
@@ -52,7 +55,7 @@ def score_fit(llm: LLM, base_cv: dict, job: dict) -> FitResult:
     return _to_result(llm.complete_json(SYSTEM, user, provider=llm.score_provider, model=llm.score_model))
 
 
-def score_fit_batch(llm: LLM, base_cv: dict, jobs: list[dict]) -> dict[int, FitResult]:
+def score_fit_batch(llm: LLM, base_cv: dict, jobs: list[dict], profile: dict | None = None) -> dict[int, FitResult]:
     """Score several jobs in ONE LLM call (far fewer calls + tokens than one-by-one,
     so we stay inside free-tier rate limits). Returns {chunk_index: FitResult} for the
     jobs the model actually returned; any it omits stay unscored and retry next run."""
@@ -63,7 +66,7 @@ def score_fit_batch(llm: LLM, base_cv: dict, jobs: list[dict]) -> dict[int, FitR
         blocks.append(f"[{i}] Title: {job.get('title')} | Company: {job.get('company')} | "
                       f"Location: {job.get('location')}\n{(job.get('description') or '')[:1200]}")
     user = (
-        _candidate(base_cv) +
+        _candidate(base_cv, profile) +
         "JOBS - score each independently against the candidate:\n\n" + "\n\n".join(blocks) +
         '\n\nReturn ONLY a JSON array, one object per job, exactly: '
         '[{"i": <job number>, "score": int, "band": "High|Medium|Low", '

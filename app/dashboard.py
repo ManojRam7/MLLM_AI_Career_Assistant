@@ -54,8 +54,8 @@ def load_jobs(url: str) -> pd.DataFrame:
     blank = pd.Series([""] * n, index=df.index)
     # resilient to schema drift: guarantee every column the UI reads exists
     for _col, _def in (("tracked", False), ("is_custom", False), ("in_bucket", False), ("bucket_tier", ""),
-                       ("notes", ""), ("source", ""), ("status", "new"), ("url", ""), ("cv_path", ""),
-                       ("fit_reasoning", "")):
+                       ("category", ""), ("notes", ""), ("source", ""), ("status", "new"), ("url", ""),
+                       ("cv_path", ""), ("fit_reasoning", "")):
         if _col not in df.columns:
             df[_col] = _def
     df["tracked"] = df["tracked"].fillna(False).astype(bool)
@@ -220,10 +220,14 @@ with tab_pipeline:
             sc = {s.get("source", "?"): s.get("count", 0) for s in sj.get("sources", [])}
             google = next((v for k, v in sc.items() if "Google" in k), 0)
             ats = next((v for k, v in sc.items() if "ATS" in k), 0)
+            gov = sum(v for k, v in sc.items() if "NHS" in k or "Civil Service" in k)
             disp.append({
                 "run": _local(r.get("run_at")), "mode": r.get("mode"),
+                "sector": sj.get("sector", "ALL"),
                 "found": r.get("discovered"), "new": r.get("stored_new"),
-                "Reed": sc.get("Reed", 0), "Adzuna": sc.get("Adzuna", 0), "Google": google, "ATS": ats,
+                "Reed": sc.get("Reed", 0), "Adzuna": sc.get("Adzuna", 0), "Google": google,
+                "ATS": ats, "Gov": gov,
+                "🧭 DS": sj.get("category_data_science", 0), "DA": sj.get("category_data_analysis", 0),
                 "🎯 companies": sj.get("companies_searched", 0), "⭐ bucket": sj.get("bucket_matches", 0),
                 "scored": r.get("scored"), "tailored": r.get("tailored"),
                 "note": r.get("llm_note") or (sj.get("telegram", "") or ""),
@@ -242,11 +246,12 @@ with tab_tracker:
     if jobs.empty:
         st.info("No jobs yet.")
     else:
-        f1, f2, f3, f4 = st.columns([2, 2, 1, 2])
+        f1, f2, f3, f4, f5 = st.columns([2, 2, 2, 1, 2])
         pick = f1.multiselect("Status", STATUSES, default=[])
         srcs = f2.multiselect("Source", sorted(jobs["source"].dropna().unique()))
-        only_bucket = f3.checkbox("⭐ only")
-        query = f4.text_input("Search title / company")
+        cats = f3.multiselect("Category", ["data-science", "data-analysis"])
+        only_bucket = f4.checkbox("⭐ only")
+        query = f5.text_input("Search title / company")
         min_fit = st.slider("Minimum fit score", 0, 100, 0, 5)
 
         view = jobs[~jobs["is_custom"]].copy()   # manual jobs live only in the Tracker
@@ -254,6 +259,8 @@ with tab_tracker:
             view = view[view["status"].isin(pick)]
         if srcs:
             view = view[view["source"].isin(srcs)]
+        if cats:
+            view = view[view["category"].isin(cats)]
         if only_bucket:
             view = view[view["in_bucket"]]
         if query:
@@ -263,18 +270,19 @@ with tab_tracker:
         view = view[view["fit_score"] >= min_fit].reset_index(drop=True)
         st.caption(f"Showing {len(view)} of {len(jobs)} jobs. Edit **status** and **notes**, then Save.")
 
-        cols = ["new", "title", "company", "locations", "posted", "fetched", "source",
+        cols = ["new", "title", "company", "category", "locations", "posted", "fetched", "source",
                 "in_bucket", "fit", "status", "notes", "url"]
         cols = [c for c in cols if c in view.columns]
         # editor key depends on the active filters so the grid re-renders cleanly when
         # they change (a fixed key kept stale edit-state and made filtering look broken)
-        fkey = abs(hash(f"{sorted(pick)}|{sorted(srcs)}|{only_bucket}|{query}|{min_fit}"))
+        fkey = abs(hash(f"{sorted(pick)}|{sorted(srcs)}|{sorted(cats)}|{only_bucket}|{query}|{min_fit}"))
         edited = st.data_editor(
             view[cols], hide_index=True, width="stretch", num_rows="fixed",
             height=680, key=f"tracker_{fkey}",
             disabled=[c for c in cols if c not in ("status", "notes")],
             column_config={
                 "status": st.column_config.SelectboxColumn("status", options=STATUSES, width="small"),
+                "category": st.column_config.TextColumn("category", width="small"),
                 "in_bucket": st.column_config.CheckboxColumn("⭐"),
                 "new": st.column_config.CheckboxColumn("🆕"),
                 "locations": st.column_config.TextColumn("locations", width="medium"),

@@ -13,10 +13,10 @@
   "right_to_work": "UK Graduate visa (eligible to work in the UK without sponsorship)",
   "profile_facts": [
     "3+ years' commercial experience across retail, consumer goods, financial services (collections) and insurance at Infosys",
-    "Marketing Mix Modelling and trade-promotion optimisation improved profit margins 5-8% across 100+ markets/regions",
-    "RFM risk segmentation over 200K+ customers raised debt-recovery rates 14% and cut recovery time 12 days",
-    "Production ML on Azure Databricks with CI/CD, Docker, Git; recent GenAI (RAG)",
-    "MSc Data Science, Coventry University (predicted Distinction); Microsoft certified AZ-900, PL-300, DP-600"
+    "Built Marketing Mix Models for a $10B+ US confectionery portfolio; trade-promotion optimisation improved trade-spend efficiency by ~3%",
+    "RFM risk segmentation over 200K+ customers raised debt-recovery rates 18% and cut recovery time 15 days",
+    "Production ML/analytics on Azure Databricks (Data Factory, Data Lake, Azure SQL, Azure ML) with CI/CD, Docker, Git, Azure DevOps; recent GenAI (RAG)",
+    "MSc Data Science, Coventry University (achieved Distinction); Microsoft certified AZ-900, PL-300, DP-600"
   ],
   "skills": {
     "Programming": "Python (pandas, NumPy, scikit-learn, SciPy, TensorFlow, PyTorch), SQL, PySpark, R",
@@ -27,15 +27,15 @@
   },
   "experience": [
     {
-      "title": "Data Scientist - Infosys Limited (client: Mars Wrigley), Bangalore, India",
+      "title": "Data Scientist - Infosys Limited, Bangalore, India",
       "dates": "Sep 2023 - May 2025",
       "bullets": [
-        "Built Marketing Mix Models (log-log regression) on 3+ years of weekly data to quantify how media, price, promotion, seasonality and competition drove sales, validated out-of-sample (R2, MAPE).",
-        "Decomposed sales into baseline vs incremental and attributed contribution and ROI to each driver, informing multi-million-pound media and trade-spend decisions.",
-        "Fed elasticities into an OR-Tools optimiser, improving profit margins by 5-8% across 100+ markets.",
-        "Built and deployed the end-to-end ML lifecycle on Azure Databricks (Azure ML, Data Lake, DevOps, Git) with CI/CD into production.",
-        "Built a Power Apps app with Power Automate flows for Strategic Revenue Management stakeholders to capture pricing/promotion inputs and refresh Power BI reporting.",
-        "Partnered with senior stakeholders and mentored junior analysts on modelling approach, validation and code quality."
+        "Built a Power BI sales-portfolio analytics platform for a $10B+ US confectionery portfolio, improving revenue-management performance.",
+        "Built Marketing Mix Models (MMM) to quantify marketing and trade-promotion effectiveness and enable data-driven investment optimisation.",
+        "Processed and analysed 3+ years of sales, retail and promotional records with SQL, Python and PySpark to support predictive modelling and commercial analytics.",
+        "Designed trade-promotion optimisation solutions that improved trade-spend efficiency by ~3% and supported profit-maximising promotional strategies.",
+        "Delivered actionable insights on promotional ROI, sales attribution and revenue drivers for strategic commercial decision-making.",
+        "Built and deployed scalable analytics workflows on Azure Databricks (Data Factory, Data Lake, Azure SQL, Azure ML) with CI/CD, Git and Azure DevOps into production."
       ]
     },
     {
@@ -43,7 +43,7 @@
       "dates": "Dec 2022 - Sep 2023",
       "bullets": [
         "Built an RFM segmentation model in Python over 200K+ customers (financial-services collections) using payment behaviour and outstanding debt to classify high-, medium- and low-risk profiles.",
-        "Designed risk-tiered debt-recovery interventions that increased recovery rates by 14% and cut average recovery time by 12 days.",
+        "Designed risk-tiered debt-recovery interventions that increased recovery rates by 18% and cut average recovery time by 15 days.",
         "Wrote complex SQL and Python for data cleansing and transformation on large datasets.",
         "Built executive Power BI and Tableau dashboards covering customer segments, debt ageing, exposure and recovery status."
       ]
@@ -64,7 +64,7 @@
     {"name": "Customer Churn Prediction Service", "text": "Random Forest churn model served via FastAPI, containerised with Docker and deployed to Azure Container Apps with GitHub Actions CI/CD. (github.com/ManojRam7/CustomerChurn_Prediction)"}
   ],
   "education": [
-    {"degree": "MSc Data Science - Coventry University, UK", "meta": "2025 - 2026 | Predicted: Distinction (70%+)"},
+    {"degree": "MSc Data Science - Coventry University, UK", "meta": "2025 - 2026 | Achieved Distinction"},
     {"degree": "BTech Mechanical Engineering - Visvodaya Engineering College, India", "meta": "2017 - 2021 | 65% (UK 2:1 equivalent)"}
   ],
   "certifications": "Microsoft Certified - Azure Fundamentals (AZ-900), Power BI Data Analyst Associate (PL-300), Fabric Analytics Engineer Associate (DP-600)",
