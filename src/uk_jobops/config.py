@@ -37,9 +37,6 @@ class Secrets:
     gemini_api_key: str = ""
     groq_api_key: str = ""
     deepseek_api_key: str = ""
-    apify_token: str = ""
-    apify_tokens: list[str] = field(default_factory=list)
-    serpapi_key: str = ""
     brightdata_api_key: str = ""
     brightdata_serp_zone: str = "serp"
     telegram_bot_token: str = ""
@@ -56,11 +53,6 @@ class Secrets:
             gemini_api_key=g("GEMINI_API_KEY", ""),
             groq_api_key=g("GROQ_API_KEY", ""),
             deepseek_api_key=g("DEEPSEEK_API_KEY", ""),
-            apify_token=g("APIFY_TOKEN", ""),
-            apify_tokens=[t for t in (g("APIFY_TOKEN_1", ""), g("APIFY_TOKEN_2", ""),
-                                      g("APIFY_TOKEN_3", ""), g("APIFY_TOKEN_4", ""),
-                                      g("APIFY_TOKEN", "")) if t],
-            serpapi_key=g("SERPAPI_KEY", ""),
             brightdata_api_key=g("BRIGHTDATA_API_KEY", ""),
             brightdata_serp_zone=g("BRIGHTDATA_SERP_ZONE", "serp"),
             telegram_bot_token=g("TELEGRAM_BOT_TOKEN", ""),

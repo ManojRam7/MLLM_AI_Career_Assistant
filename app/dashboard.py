@@ -91,8 +91,8 @@ def load_runs(url: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def load_blobs(url: str) -> list:
-    return get_store(url).tailored_blobs()
+def load_recs(url: str) -> list:
+    return get_store(url).recommendations_list()
 
 
 cfg = load_config()
@@ -134,8 +134,8 @@ def _priority(row) -> str:
 
 
 def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
-    """Shared jobs table with filters, priority colours, and inline status/notes editing.
-    `category` limits to 'data-science' / 'data-analysis' (used by the category tabs)."""
+    """Shared READ-ONLY jobs browser with filters and priority colours. Status is managed only
+    in the Tracker tab. `category` limits to 'data-science' / 'data-analysis'."""
     st.subheader(title)
     if caption:
         st.caption(caption)
@@ -148,16 +148,13 @@ def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
     if base.empty:
         st.info("No jobs in this view yet.")
         return
-    f1, f2, f3, f4 = st.columns([2, 2, 1, 3])
-    pick = f1.multiselect("Status", STATUSES, default=[], key=f"{key_prefix}_st")
-    srcs = f2.multiselect("Source", sorted(base["source"].dropna().unique()), key=f"{key_prefix}_src")
-    only_bucket = f3.checkbox("⭐ only", key=f"{key_prefix}_bk")
-    q = f4.text_input("Search title / company", key=f"{key_prefix}_q")
+    f1, f2, f3 = st.columns([2, 1, 3])
+    srcs = f1.multiselect("Source", sorted(base["source"].dropna().unique()), key=f"{key_prefix}_src")
+    only_bucket = f2.checkbox("⭐ only", key=f"{key_prefix}_bk")
+    q = f3.text_input("Search title / company", key=f"{key_prefix}_q")
     min_fit = st.slider("Minimum fit score", 0, 100, 0, 5, key=f"{key_prefix}_fit")
 
     view = base
-    if pick:
-        view = view[view["status"].isin(pick)]
     if srcs:
         view = view[view["source"].isin(srcs)]
     if only_bucket:
@@ -171,21 +168,17 @@ def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
     view = view.copy()
     view["▲"] = view.apply(_priority, axis=1)
     st.caption(f"Showing {len(view)} jobs.  🟢 ≥85 · 🔵 75-84 · 🟡 65-74 · ⚪ <65 · ▫️ unscored · ⭐ target company. "
-               "Edit **status** and **notes**, then Save.")
+               "Add jobs you're pursuing from the **Tracker** tab.")
     cols = ["▲", "new", "title", "company", "category", "locations", "posted", "fetched",
-            "source", "in_bucket", "fit", "status", "notes", "url"]
+            "source", "in_bucket", "fit", "url"]
     if category:
         cols.remove("category")
     cols = [c for c in cols if c in view.columns]
-    fkey = abs(hash(f"{key_prefix}|{sorted(pick)}|{sorted(srcs)}|{only_bucket}|{q}|{min_fit}"))
-    edited = st.data_editor(
-        view[cols], hide_index=True, width="stretch", num_rows="fixed", height=620,
-        key=f"{key_prefix}_ed_{fkey}",
-        disabled=[c for c in cols if c not in ("status", "notes")],
+    st.dataframe(
+        view[cols], hide_index=True, width="stretch", height=620,
         column_config={
             "▲": st.column_config.TextColumn("▲", width="small",
                                              help="Priority: 🟢≥85 🔵75+ 🟡65+ ⚪<65 ▫️unscored"),
-            "status": st.column_config.SelectboxColumn("status", options=STATUSES, width="small"),
             "category": st.column_config.TextColumn("category", width="small"),
             "in_bucket": st.column_config.CheckboxColumn("⭐"),
             "new": st.column_config.CheckboxColumn("🆕"),
@@ -193,24 +186,12 @@ def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
             "posted": st.column_config.TextColumn("posted", width="small"),
             "fetched": st.column_config.TextColumn("fetched (UTC)", width="small"),
             "fit": st.column_config.NumberColumn("fit", format="%d", width="small"),
-            "url": st.column_config.LinkColumn("link", display_text="open"),
-            "notes": st.column_config.TextColumn("notes", width="large")})
-    if st.button("💾 Save changes", type="primary", key=f"{key_prefix}_save"):
-        store = get_store(url)
-        keys, n = view["dedupe_key"].tolist(), 0
-        for i, key in enumerate(keys):
-            ns, nn = edited.iloc[i]["status"], str(edited.iloc[i]["notes"] or "")
-            if ns != view.iloc[i]["status"] or nn != str(view.iloc[i]["notes"] or ""):
-                store.set_status(key, ns, notes=nn)
-                n += 1
-        st.cache_data.clear()
-        st.success(f"Saved {n} change(s).")
-        st.rerun()
+            "url": st.column_config.LinkColumn("link", display_text="open")})
 
 
 (tab_overview, tab_jobs, tab_ds, tab_da, tab_source, tab_pipeline, tab_board, tab_cvs) = st.tabs(
     ["📊 Overview", "💼 Jobs", "🔬 Data Science", "📈 Data Analysis", "🗂️ By Source",
-     "⚙️ Runs & LLMs", "📋 Tracker", "📄 Tailored CVs"])
+     "⚙️ Runs & LLMs", "📋 Tracker", "📝 Recommendations"])
 
 # ---------------------------------------------------------------- OVERVIEW
 with tab_overview:
@@ -332,6 +313,9 @@ with tab_pipeline:
                 "🧭 DS": sj.get("category_data_science", 0), "DA": sj.get("category_data_analysis", 0),
                 "🎯 companies": sj.get("companies_searched", 0), "⭐ bucket": sj.get("bucket_matches", 0),
                 "scored": r.get("scored"), "tailored": r.get("tailored"),
+                "src status": " · ".join(f"{s.get('source','?').split(' (')[0]}:{s.get('status','?')}"
+                                         + (f"({s.get('count',0)})" if s.get('status') != 'ok' or not s.get('count') else "")
+                                         for s in sj.get("sources", [])),
                 "note": r.get("llm_note") or (sj.get("telegram", "") or ""),
             })
         st.dataframe(pd.DataFrame(disp), hide_index=True, width="stretch", height=430)
@@ -461,37 +445,34 @@ with tab_board:
             st.success(f"Moved {n_moved} · deleted {len(deletes)}.")
             st.rerun()
 
-# --------------------------------------------------------------- TAILORED CVS
+# --------------------------------------------------------------- RECOMMENDATIONS
 with tab_cvs:
-    st.subheader("Tailored CVs and cover letters")
-    _docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    blob_map = {b["dedupe_key"]: b for b in load_blobs(url)}
-    cvp = (jobs["cv_path"] if "cv_path" in jobs else pd.Series([""] * len(jobs), index=jobs.index)).fillna("").astype(str)
-    tailored = jobs[(jobs["status"] == "tailored") | (cvp != "")] if not jobs.empty else jobs
-    if jobs.empty or tailored.empty:
-        st.info("No tailored CVs yet. The pipeline tailors the highest-fit jobs each run.")
+    st.subheader("📝 ATS tailoring recommendations & cover letters")
+    st.caption("For each high-fit job: how to tailor every CV section to pass that ATS, plus a ready cover "
+               "letter in your format. Copy the text straight into your CV/letter — no documents to manage.")
+    recs = load_recs(url)
+    if not recs:
+        st.info("No recommendations yet. The pipeline writes these for the highest-fit jobs each run "
+                "(fit ≥ tailor threshold). Run the pipeline, then refresh.")
     else:
-        ready = sum(1 for k in tailored["dedupe_key"] if k in blob_map)
-        st.caption(f"{len(tailored)} tailored · {ready} downloadable now. Older CVs (made before file-storage) "
-                   "regenerate over the next runs; each run tailors only CVs it hasn't saved yet, never all of them.")
-        for _, r in tailored.sort_values("fit_score", ascending=False).iterrows():
+        cat_pick = st.multiselect("Category", ["data-science", "data-analysis"], key="rec_cat")
+        rows = [r for r in recs if not cat_pick or r.get("category") in cat_pick]
+        st.caption(f"{len(rows)} of {len(recs)} shown.")
+        for r in rows:
             star = "⭐ " if r.get("in_bucket") else ""
-            with st.expander(f"{star}{r['title']} · {r['company']}  —  fit {int(r.get('fit_score') or 0)}"):
-                if r.get("fit_reasoning"):
-                    st.write(r["fit_reasoning"])
-                b = blob_map.get(r["dedupe_key"])
-                base = "".join(c for c in f"{r['company']}_{r['title']}" if c.isalnum() or c in " _-").strip().replace(" ", "_")[:60]
-                if b:
-                    dcols = st.columns(2)
-                    for col, blob, label, suffix in (
-                        (dcols[0], b.get("cv_blob"), "⬇️ CV (.docx)", "CV"),
-                        (dcols[1], b.get("cover_blob"), "⬇️ Cover letter (.docx)", "CoverLetter")):
-                        if blob:
-                            col.download_button(label, bytes(blob), file_name=f"{base}_{suffix}.docx",
-                                                key=f"{r['dedupe_key']}{suffix}", mime=_docx)
-                        else:
-                            col.caption(f"{suffix}: not available")
-                else:
-                    st.caption("⏳ File will be available after the next tailoring run "
-                               "(this CV was made before file-storage; it's being regenerated once).")
+            fit = int(r.get("fit_score") or 0)
+            dot = "🟢" if fit >= 85 else "🔵" if fit >= 75 else "🟡" if fit >= 65 else "⚪"
+            with st.expander(f"{dot} {star}{r['title']} · {r['company']}  —  fit {fit}"):
+                if r.get("url"):
+                    st.markdown(f"[Open job posting]({r['url']})")
+                t1, t2 = st.tabs(["🧩 CV recommendations", "✉️ Cover letter"])
+                with t1:
+                    st.markdown(r.get("recommendations") or "_No recommendations text._")
+                with t2:
+                    cover = r.get("cover_text") or ""
+                    if cover:
+                        st.text_area("Cover letter (copy)", cover, height=380,
+                                     key=f"cov_{r['dedupe_key']}")
+                    else:
+                        st.caption("No cover letter text.")
 

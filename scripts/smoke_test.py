@@ -43,7 +43,7 @@ def main() -> None:
     srcs = [
         ReedSource(s.reed_api_key),
         AdzunaSource(s.adzuna_app_id, s.adzuna_app_key, cfg.settings.get("sources", {}).get("adzuna", {}).get("country", "gb")),
-        ATSSource(cfg.settings.get("bucket_list", {}).get("path", "data/companies_bucketlist.csv"),
+        ATSSource(cfg.settings.get("bucket_list", {}).get("path", "data/companies_master.csv"),
                   cfg.settings.get("seniority", {}).get("include", [])),
     ]
     for src in srcs:
@@ -57,33 +57,25 @@ def main() -> None:
         except Exception as exc:
             line(False, src.name, f"ERROR {exc}")
 
-    print("\n== 3. LLM fit-score + tailor (1 job) ==")
-    if not (s.gemini_api_key or s.groq_api_key):
-        line(False, "LLM", "no Gemini/Groq key - skipped")
+    print("\n== 3. LLM fit-score + recommendations (1 job) ==")
+    if not (s.gemini_api_key or s.groq_api_key or s.deepseek_api_key):
+        line(False, "LLM", "no Gemini/Groq/DeepSeek key - skipped")
     else:
         try:
-            from uk_jobops.cv.render_docx import render
             from uk_jobops.llm.client import LLM
             from uk_jobops.llm.fit_score import score_fit
-            from uk_jobops.llm.tailor import tailor
-            from uk_jobops.llm.validator import validate
+            from uk_jobops.llm.recommend import recommend
 
             job = (sample.to_db() if sample else
                    {"title": "Data Scientist", "company": "Example UK", "location": "London",
                     "description": "We need Python, SQL, machine learning, marketing analytics, "
                                    "experimentation and stakeholder communication.", "dedupe_key": "smoke"})
             llm = LLM(cfg)
-            fit = score_fit(llm, cfg.base_cv, job)
+            fit = score_fit(llm, cfg.base_cv, job, cfg.profile)
             line(fit.score > 0, "Fit scoring", f"score={fit.score} band={fit.band}")
-            rulebook = cfg.path(cfg.settings.get("llm", {}).get("rulebook", "config/rulebook.md")).read_text(encoding="utf-8")
-            t = tailor(llm, rulebook, cfg.base_cv, job, max_repair=1)
-            ok, issues = validate(t)
-            line(ok, "Tailor + validate", f"coverage={t.keyword_coverage} issues={len(issues)}")
-            if issues:
-                for i in issues[:4]:
-                    print(f"        - {i}")
-            cv_path, cover_path = render(cfg.base_cv, t, job, out_root="output/smoke")
-            line(bool(cv_path), "Render docx", cv_path)
+            rec = recommend(llm, cfg.base_cv, job, cfg.profile)
+            line(bool(rec.cover_letter), "Recommendations + cover letter",
+                 f"fit={rec.fit_score} keywords={len(rec.ats_keywords)} cover_chars={len(rec.cover_letter)}")
         except Exception as exc:
             line(False, "LLM", f"ERROR {exc}")
             traceback.print_exc()

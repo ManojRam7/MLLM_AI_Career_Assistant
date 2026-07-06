@@ -43,10 +43,6 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          APIFY_TOKEN_1: ${{ secrets.APIFY_TOKEN_1 }}
-          APIFY_TOKEN_2: ${{ secrets.APIFY_TOKEN_2 }}
-          APIFY_TOKEN_3: ${{ secrets.APIFY_TOKEN_3 }}
-          APIFY_TOKEN_4: ${{ secrets.APIFY_TOKEN_4 }}
           BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
           BRIGHTDATA_SERP_ZONE: ${{ secrets.BRIGHTDATA_SERP_ZONE }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

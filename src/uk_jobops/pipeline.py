@@ -36,9 +36,9 @@ class Pipeline:
         # ATS scans this sector's companies (free, accurate) - every sector run.
         if src_cfg.get("ats", {}).get("enabled"):
             out.append(ATSSource(bucket_path, self.s.get("seniority", {}).get("include", []), sector=sector))
-        # Bright Data SERP (Google for Jobs) - the main discovery engine. Broad market queries +
-        # gov/LinkedIn site: queries (only on the broad run or the relevant sector) + a rotating
-        # per-company sample for the active sector. Replaces Apify.
+        # Bright Data SERP (Google) - the main discovery engine. Broad job-board queries +
+        # gov/LinkedIn site: queries (on the broad run or the relevant sector) + a rotating
+        # per-company sample for the active sector.
         bd = src_cfg.get("brightdata", {})
         if bd.get("enabled") and sec.brightdata_api_key:
             from .sources.brightdata_serp import BrightDataSerpSource
@@ -47,30 +47,10 @@ class Pipeline:
                 bucket_path=self.cfg.path(bucket_path), sector=sector, run_broad=run_broad,
                 extra_queries=bd.get("extra_queries", []),
                 site_queries=self._gov_site_queries(sector, run_broad, bd),
+                search_domains=bd.get("search_domains"),
                 top_companies_per_run=bd.get("top_companies_per_run", 5),
                 max_queries=bd.get("max_queries", 20), pages=bd.get("pages", 1),
                 country=bd.get("country", "gb")))
-        # Optional HTML gov portals (disabled by default now that SERP covers gov via site: queries).
-        gov = src_cfg.get("gov", {})
-        if gov.get("enabled"):
-            from .sources.gov import CivilServiceJobsSource, NHSJobsSource
-            gq = gov.get("queries", ["data analyst", "data scientist"])
-            cs_sectors = [s.lower() for s in gov.get("civil_service_sectors", ["civil services"])]
-            nhs_sectors = [s.lower() for s in gov.get("nhs_sectors", ["insurance & health"])]
-            if run_broad or (sector and sector.lower() in cs_sectors):
-                out.append(CivilServiceJobsSource(queries=gq, max_pages=gov.get("max_pages", 2)))
-            if run_broad or (sector and sector.lower() in nhs_sectors):
-                out.append(NHSJobsSource(queries=gq, max_pages=gov.get("max_pages", 2)))
-        # Legacy Apify (disabled by default; kept as a fallback if you top up credits).
-        ap = src_cfg.get("apify", {})
-        if ap.get("enabled") and sec.apify_tokens:
-            from .sources.apify_google import ApifyGoogleSource
-            out.append(ApifyGoogleSource(
-                sec.apify_tokens, self.cfg.path(bucket_path),
-                actor=ap.get("actor", "johnvc~google-jobs-scraper"),
-                top_companies_per_run=ap.get("top_companies_per_run", 5),
-                num_results=ap.get("num_results", 50), max_queries=ap.get("max_queries", 6),
-                extra_queries=ap.get("extra_queries", []), sector=sector, run_broad=run_broad))
         return out
 
     def _gov_site_queries(self, sector, run_broad, bd) -> list[str]:
@@ -105,7 +85,7 @@ class Pipeline:
 
         rot = self.s.get("rotation", {})
         sectors = rot.get("sectors", [])
-        broad_index = rot.get("apify_broad_on_index", -1)
+        broad_index = rot.get("broad_on_index", -1)
         # A dedicated daily 'full' run (sector=None) does the broad market sweep (Reed/Adzuna +
         # broad SERP + gov + LinkedIn). The 7 sector runs focus purely on their sector's companies
         # (ATS + per-company SERP), unless a sector is explicitly the designated broad index.
@@ -121,7 +101,7 @@ class Pipeline:
         # Boost: tag jobs by bucket tier so top-100 target companies jump the
         # scoring/tailoring queue (db queries order top100 first, then any bucket).
         tiers = load_bucket_tiers(
-            self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_bucketlist.csv")))
+            self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_master.csv")))
         for j in targets:
             j.bucket_tier = bucket_tier(j.company, tiers)
             j.in_bucket = bool(j.bucket_tier)
@@ -146,9 +126,9 @@ class Pipeline:
             summary["companies_searched"] = len(companies_in_sector(
                 self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_master.csv")), sector))
         else:
-            _ap = self.s.get("sources", {}).get("apify", {})
-            summary["companies_searched"] = (_ap.get("top_companies_per_run", 0)
-                                             if _ap.get("enabled") and self.cfg.secrets.apify_tokens else 0)
+            _bd = self.s.get("sources", {}).get("brightdata", {})
+            summary["companies_searched"] = (_bd.get("top_companies_per_run", 0)
+                                             if _bd.get("enabled") and self.cfg.secrets.brightdata_api_key else 0)
 
         # snapshot for offline inspection
         Path("output").mkdir(exist_ok=True)
@@ -174,16 +154,21 @@ class Pipeline:
                                       exclude_recruiters=sen.get("exclude_recruiters", True))
         if purged:
             summary["purged_excluded"] = purged
+        legacy = store.purge_sources(self.s.get("cleanup", {}).get("purge_sources", ["Apify"]))
+        if legacy:
+            summary["purged_legacy"] = legacy
+        collapsed = store.collapse_duplicates()
+        if collapsed:
+            summary["collapsed_duplicates"] = collapsed
 
         # fit scoring + tailoring need LLM keys. Capped per run + resilient to
         # free-tier rate limits (a 429 stops the LLM phase cleanly and resumes next run).
         if self.cfg.secrets.gemini_api_key or self.cfg.secrets.groq_api_key:
             import time
 
-            from .cv.render_docx import render
             from .llm.client import LLM, LLMError
             from .llm.fit_score import score_fit, score_fit_batch
-            from .llm.tailor import tailor
+            from .llm.recommend import recommend
 
             llm = LLM(self.cfg)
             lc = self.s.get("llm", {})
@@ -231,29 +216,21 @@ class Pipeline:
                     break
                 time.sleep(delay)
 
-            # if scoring already exhausted the quota, don't waste a call on tailoring
-            tailor_jobs = ([] if llm_exhausted else
-                           store.jobs_to_tailor(scoring.get("tailor_threshold", 70),
-                                                limit=scoring.get("max_tailor_per_run", 6)))
-            rulebook = (self.cfg.path(lc.get("rulebook", "config/rulebook.md")).read_text(encoding="utf-8")
-                        if tailor_jobs else "")
-            for job in tailor_jobs:
+            # if scoring already exhausted the quota, don't waste a call on recommendations
+            rec_jobs = ([] if llm_exhausted else
+                        store.jobs_to_recommend(scoring.get("tailor_threshold", 70),
+                                                limit=scoring.get("max_tailor_per_run", 8)))
+            for job in rec_jobs:
                 try:
-                    t = tailor(llm, rulebook, self.cfg.base_cv, job, max_repair=lc.get("max_repair_loops", 1),
-                           profile=self.cfg.profile)
+                    rec = recommend(llm, self.cfg.base_cv, job, self.cfg.profile)
                 except LLMError as exc:
                     errors.append(str(exc)[:140])
                     if _rate_limited(exc):
-                        summary["llm_note"] = "Rate limit during tailoring; remaining jobs continue next run."
+                        summary["llm_note"] = "Rate limit during recommendations; remaining jobs continue next run."
                         break
                     continue
-                cv_path, cover_path = render(self.cfg.base_cv, t, job)
-                # store the .docx bytes in the DB so both dashboards can offer
-                # downloads anywhere (the runner's files are otherwise ephemeral)
-                cvb = Path(cv_path).read_bytes() if cv_path and Path(cv_path).exists() else None
-                covb = Path(cover_path).read_bytes() if cover_path and Path(cover_path).exists() else None
-                store.update(job["dedupe_key"], cv_path=cv_path, cover_path=cover_path,
-                             cv_blob=cvb, cover_blob=covb, status="tailored", gaps=t.gaps)
+                store.update(job["dedupe_key"], recommendations=rec.to_markdown(),
+                             cover_text=rec.cover_letter, status="tailored", gaps=rec.gaps)
                 summary["tailored"] += 1
                 time.sleep(delay)
             if errors:

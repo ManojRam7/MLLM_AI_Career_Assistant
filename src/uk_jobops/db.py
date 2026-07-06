@@ -55,6 +55,8 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS bucket_tier TEXT DEFAULT '';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS notified BOOLEAN DEFAULT FALSE;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS tracked BOOLEAN DEFAULT FALSE;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS category TEXT DEFAULT '';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS recommendations TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cover_text TEXT;
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_fit_idx ON jobs(fit_score DESC);
 
@@ -202,6 +204,40 @@ class Store:
             cur.execute(sql, params)
             return cur.rowcount
 
+    def purge_sources(self, patterns: list[str]) -> int:
+        """Delete rows from retired/legacy sources (e.g. old 'Google (Apify)' rows). Skips manual jobs."""
+        patterns = [p for p in (patterns or []) if p]
+        if not patterns:
+            return 0
+        clause = " OR ".join(["source ILIKE %s"] * len(patterns))
+        with self.conn.cursor() as cur:
+            cur.execute(f"DELETE FROM jobs WHERE is_custom = FALSE AND ({clause})",
+                        [f"%{p}%" for p in patterns])
+            return cur.rowcount
+
+    def collapse_duplicates(self) -> int:
+        """Keep ONE row per (title, company, first-city). Adzuna returns the same job under
+        several tracking URLs, so URL-identity leaves cross-run duplicates - this cleans them,
+        keeping the most useful copy (tracked > progressed > has recommendations > highest fit >
+        earliest seen). Skips manual jobs."""
+        sql = """
+        WITH ranked AS (
+          SELECT dedupe_key, row_number() OVER (
+            PARTITION BY lower(btrim(title)), lower(btrim(company)),
+                         lower(split_part(coalesce(location,''), ',', 1))
+            ORDER BY tracked DESC,
+                     (status IN ('applied','interview','offer','assessment_cleared','cleared')) DESC,
+                     (recommendations IS NOT NULL) DESC,
+                     fit_score DESC, first_seen_at ASC
+          ) AS rn
+          FROM jobs WHERE is_custom = FALSE
+        )
+        DELETE FROM jobs WHERE dedupe_key IN (SELECT dedupe_key FROM ranked WHERE rn > 1)
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql)
+            return cur.rowcount
+
     # ------------------------------------------------------------------- reads
     def _rows(self, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
         with self.conn.cursor() as cur:
@@ -215,12 +251,11 @@ class Store:
             "WHERE status='new' AND is_target=TRUE AND fit_score=0 "
             "ORDER BY (bucket_tier='top100') DESC, in_bucket DESC LIMIT %s", (limit,))
 
-    def jobs_to_tailor(self, threshold: int, limit: int = 6) -> list[dict[str, Any]]:
-        # cv_blob IS NULL also re-tailors older jobs whose file bytes were never stored,
-        # backfilling downloadable CVs without re-scoring them.
+    def jobs_to_recommend(self, threshold: int, limit: int = 8) -> list[dict[str, Any]]:
+        # generate ATS recommendations + cover letter once per job (recommendations IS NULL).
         return self._rows(
             "SELECT dedupe_key,title,company,location,description FROM jobs "
-            "WHERE cv_blob IS NULL AND is_target=TRUE "
+            "WHERE recommendations IS NULL AND is_target=TRUE "
             "AND (fit_score >= %s OR is_custom=TRUE) "
             "ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, fit_score DESC LIMIT %s", (threshold, limit))
 
@@ -236,10 +271,12 @@ class Store:
             "FROM jobs ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, fit_score DESC, first_seen_at DESC LIMIT %s",
             (limit,))
 
-    def tailored_blobs(self) -> list[dict[str, Any]]:
+    def recommendations_list(self, limit: int = 200) -> list[dict[str, Any]]:
         return self._rows(
-            "SELECT dedupe_key,title,company,fit_score,in_bucket,fit_reasoning,url,cv_blob,cover_blob "
-            "FROM jobs WHERE cv_blob IS NOT NULL ORDER BY in_bucket DESC, fit_score DESC")
+            "SELECT dedupe_key,title,company,category,location,fit_score,in_bucket,bucket_tier,"
+            "fit_reasoning,url,recommendations,cover_text "
+            "FROM jobs WHERE recommendations IS NOT NULL "
+            "ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, fit_score DESC LIMIT %s", (limit,))
 
     def status_counts(self) -> dict[str, int]:
         return {r["status"]: r["n"] for r in self._rows("SELECT status, COUNT(*) n FROM jobs GROUP BY status")}

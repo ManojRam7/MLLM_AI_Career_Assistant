@@ -133,6 +133,9 @@ seniority:
     - "Salt"
     - "IC Resources"
     - "Caspian One"
+    - "IT Online Learning"
+    - "FDM Group"
+    - "AMS Contingent"
 
 scoring:
   tailor_threshold: 70           # only tailor a CV when fit score >= this (saves tokens)
@@ -150,11 +153,17 @@ sources:
   reed: { enabled: true }
   adzuna: { enabled: true, country: "gb" }
   ats: { enabled: true }         # Greenhouse/Lever/Ashby/SmartRecruiters/Workday/Workable/Recruitee/Eightfold
-  careers_playwright: { enabled: false }
-  brightdata:                    # Google for Jobs via Bright Data SERP API (main engine; replaces Apify)
+  brightdata:                    # Google job search via Bright Data SERP API (main engine)
     enabled: true
     country: "gb"
     pages: 1                     # SERP pages per query (each page = 1 billed request; keep low for credits)
+    search_domains:              # broad role queries are scoped to these job boards so organic = real jobs
+      - "uk.linkedin.com/jobs"
+      - "www.reed.co.uk/jobs"
+      - "www.totaljobs.com"
+      - "www.cv-library.co.uk"
+      - "uk.indeed.com"
+      - "www.glassdoor.co.uk"
     top_companies_per_run: 5     # rotating per-company sample for the active sector (DS + DA each)
     max_queries: 22              # broad + gov/site + per-company, capped for credit control
     gov_queries: ["data analyst", "data scientist", "data engineer"]
@@ -170,34 +179,9 @@ sources:
       - "analytics engineer United Kingdom"
       - "AI engineer United Kingdom"
       - "graduate data scientist United Kingdom"
-  apify:                         # legacy Google Jobs via Apify - disabled (credits spent); kept as fallback
-    enabled: false
-    actor: "johnvc~google-jobs-scraper"
-    top_companies_per_run: 5     # rotating sample of target companies; each yields a DS + a DA query
-    num_results: 80              # deep pagination so more of the market is captured (trimmed to save free credits)
-    max_queries: 24              # extra(12) + generic(2) + company(5x2=10) queries, capped for cost/time
-    extra_queries:               # always-run broad + government searches Reed/Adzuna miss (both categories)
-      # data science (broad + gov)
-      - "data scientist United Kingdom"
-      - "machine learning engineer United Kingdom"
-      - "data scientist NHS"
-      - "data scientist civil service"
-      - "data scientist UK government"
-      - "AI engineer United Kingdom"
-      # data analysis (broad + government emphasis - civil service opens many analyst roles)
-      - "data analyst United Kingdom"
-      - "data analytics United Kingdom"
-      - "data analyst civil service"
-      - "data analyst NHS"
-      - "data analyst UK government"
-      - "business intelligence analyst United Kingdom"
-  gov:                           # HTML gov scrapers - disabled; Bright Data SERP covers gov via site: queries
-    enabled: false               # set true only if you want the direct-HTML NHS/Civil Service fallback too
-    queries: ["data analyst", "data scientist", "data engineer"]
-    max_pages: 2
-    civil_service_sectors: ["Civil Services"]     # run Civil Service Jobs on this sector's run
-    nhs_sectors: ["Insurance & Health"]           # run NHS Jobs on this sector's run
-  serpapi: { enabled: false }    # paid
+
+cleanup:                         # one-time / ongoing housekeeping, runs every pass (idempotent)
+  purge_sources: ["Apify"]       # delete rows from retired sources (old 'Google (Apify)' rows)
 
 bucket_list:
   path: "data/companies_master.csv"       # 1165 target companies across 7 sectors (Master List)
@@ -214,7 +198,7 @@ rotation:                        # one sector per scheduled run; all 7 covered o
     - "Service Based Tech companies"
   schedule_hours_utc: [7, 9, 11, 13, 15, 17, 19]   # `--sector auto` maps the current UTC hour -> sector
   broad_hour_utc: 5              # a dedicated daily FULL/broad run (all sources, no sector focus) at this hour
-  apify_broad_on_index: -1       # -1 = no sector run does the broad sweep (only the dedicated full run does)
+  broad_on_index: -1             # -1 = no sector run does the broad sweep (only the dedicated full run does)
 
 llm:
   # Tier reality: DeepSeek = paid credits (cheap, bulk scoring); Gemini = Google AI Pro
@@ -230,6 +214,4 @@ llm:
   gemini_model: "gemini-2.0-flash"   # default/fallback Gemini model (higher limits)
   groq_model: "llama-3.3-70b-versatile"
   deepseek_model: "deepseek-chat"
-  max_repair_loops: 1
-  request_delay_seconds: 2.5     # scoring runs on DeepSeek; Gemini tailoring has AI Pro expanded limits
-  rulebook: "config/rulebook.md"
+  request_delay_seconds: 2.5     # scoring runs on DeepSeek; Gemini recommendations have AI Pro expanded limits

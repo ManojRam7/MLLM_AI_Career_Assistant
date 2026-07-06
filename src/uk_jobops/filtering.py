@@ -10,9 +10,18 @@ def _word(term: str) -> re.Pattern:
     return re.compile(r"\b" + re.escape(term) + r"\b", re.I)
 
 
+_SPAM = re.compile(
+    r"\b(apprentice\w*|apprenticeship|placement programme|placement scheme|no experience needed|"
+    r"bootcamp|boot camp|kickstart|work experience|self[-\s]?paced|traineeship|"
+    r"course|academy|re[-\s]?train)\b", re.I)
+
+
 def classify(title: str, include: list[str], exclude_title: list[str]) -> tuple[bool, str]:
     """Return (is_target, seniority_label). Decisions are made on the TITLE only."""
     t = title or ""
+    # drop course/apprenticeship/placement spam outright
+    if _SPAM.search(t):
+        return False, "spam"
     # exclude senior/lead/manager-only roles (whole word, on the title)
     for term in exclude_title:
         if _word(term).search(t):
