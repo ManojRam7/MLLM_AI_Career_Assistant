@@ -29,7 +29,17 @@ def classify(title: str, include: list[str], exclude_title: list[str]) -> tuple[
 
 _RECRUITER = re.compile(
     r"\b(recruit\w*|staffing|resourc\w*|rpo|headhunt\w*|talent solutions|"
-    r"talent acquisition|executive search|search partners)\b", re.I)
+    r"talent acquisition|executive search|search partners|consultants?|agency)\b", re.I)
+
+# Agencies rarely name themselves; they give themselves away in the JD ("our client...").
+# Kept to strong signals only so a direct employer saying "a leading bank" is NOT dropped.
+_AGENCY_DESC = re.compile(
+    r"\b(our client is|on behalf of (?:our|a|the) client|recruiting (?:for|on behalf of) (?:our|a) client|"
+    r"my client|client is (?:a|an|seeking|looking)|working (?:with|on behalf of) (?:our|a) client)\b", re.I)
+
+
+def is_agency(company: str, description: str) -> bool:
+    return bool(_RECRUITER.search(company or "") or _AGENCY_DESC.search(description or ""))
 
 # Two co-primary job categories, decided on the title. Data-science signals win when
 # both appear (e.g. "data science analyst" -> data-science).
@@ -61,7 +71,7 @@ def apply_filters(jobs: list[Job], include: list[str], exclude_title: list[str],
         company = j.company or ""
         if ok and excl_co and any(c in company.lower() for c in excl_co):
             ok, label = False, "excluded-company"
-        elif ok and exclude_recruiters and _RECRUITER.search(company):
+        elif ok and exclude_recruiters and is_agency(company, j.description):
             ok, label = False, "recruiter"
         j.seniority = label
         j.category = job_category(j.title)

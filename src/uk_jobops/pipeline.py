@@ -36,8 +36,21 @@ class Pipeline:
         # ATS scans this sector's companies (free, accurate) - every sector run.
         if src_cfg.get("ats", {}).get("enabled"):
             out.append(ATSSource(bucket_path, self.s.get("seniority", {}).get("include", []), sector=sector))
-        # Government portals: NHS Jobs + Civil Service Jobs. Run when relevant to the sector,
-        # or on any broad run. Civil Service covers ~100 civil-service employers in one search.
+        # Bright Data SERP (Google for Jobs) - the main discovery engine. Broad market queries +
+        # gov/LinkedIn site: queries (only on the broad run or the relevant sector) + a rotating
+        # per-company sample for the active sector. Replaces Apify.
+        bd = src_cfg.get("brightdata", {})
+        if bd.get("enabled") and sec.brightdata_api_key:
+            from .sources.brightdata_serp import BrightDataSerpSource
+            out.append(BrightDataSerpSource(
+                sec.brightdata_api_key, sec.brightdata_serp_zone,
+                bucket_path=self.cfg.path(bucket_path), sector=sector, run_broad=run_broad,
+                extra_queries=bd.get("extra_queries", []),
+                site_queries=self._gov_site_queries(sector, run_broad, bd),
+                top_companies_per_run=bd.get("top_companies_per_run", 5),
+                max_queries=bd.get("max_queries", 20), pages=bd.get("pages", 1),
+                country=bd.get("country", "gb")))
+        # Optional HTML gov portals (disabled by default now that SERP covers gov via site: queries).
         gov = src_cfg.get("gov", {})
         if gov.get("enabled"):
             from .sources.gov import CivilServiceJobsSource, NHSJobsSource
@@ -48,6 +61,7 @@ class Pipeline:
                 out.append(CivilServiceJobsSource(queries=gq, max_pages=gov.get("max_pages", 2)))
             if run_broad or (sector and sector.lower() in nhs_sectors):
                 out.append(NHSJobsSource(queries=gq, max_pages=gov.get("max_pages", 2)))
+        # Legacy Apify (disabled by default; kept as a fallback if you top up credits).
         ap = src_cfg.get("apify", {})
         if ap.get("enabled") and sec.apify_tokens:
             from .sources.apify_google import ApifyGoogleSource
@@ -58,6 +72,21 @@ class Pipeline:
                 num_results=ap.get("num_results", 50), max_queries=ap.get("max_queries", 6),
                 extra_queries=ap.get("extra_queries", []), sector=sector, run_broad=run_broad))
         return out
+
+    def _gov_site_queries(self, sector, run_broad, bd) -> list[str]:
+        """site:-restricted SERP queries for the government portals (and optionally LinkedIn),
+        added on the broad run or on the run for the relevant sector."""
+        cats = bd.get("gov_queries", ["data analyst", "data scientist", "data engineer"])
+        cs = [s.lower() for s in bd.get("civil_service_sectors", ["civil services"])]
+        nhs = [s.lower() for s in bd.get("nhs_sectors", ["insurance & health"])]
+        q: list[str] = []
+        if run_broad or (sector and sector.lower() in cs):
+            q += [f"site:civilservicejobs.service.gov.uk {c}" for c in cats]
+        if run_broad or (sector and sector.lower() in nhs):
+            q += [f"site:jobs.nhs.uk {c}" for c in cats]
+        if run_broad and bd.get("linkedin_site"):
+            q += [f"site:uk.linkedin.com/jobs {c} United Kingdom" for c in cats]
+        return q
 
     def discover(self, recency_days: int, sector: str | None = None, run_broad: bool = True):
         search = self.s.get("search", {})
@@ -76,9 +105,10 @@ class Pipeline:
 
         rot = self.s.get("rotation", {})
         sectors = rot.get("sectors", [])
-        broad_index = rot.get("apify_broad_on_index", 0)
-        # On a 7x/day sector rotation, run the broad market sweep (Reed/Adzuna + broad Apify/gov)
-        # only on one sector's run; the other six focus purely on their sector's companies.
+        broad_index = rot.get("apify_broad_on_index", -1)
+        # A dedicated daily 'full' run (sector=None) does the broad market sweep (Reed/Adzuna +
+        # broad SERP + gov + LinkedIn). The 7 sector runs focus purely on their sector's companies
+        # (ATS + per-company SERP), unless a sector is explicitly the designated broad index.
         run_broad = True if not (sector and sector in sectors) else (sectors.index(sector) == broad_index)
         raw, statuses = self.discover(recency, sector=sector, run_broad=run_broad)
         normalize(raw)

@@ -25,10 +25,16 @@ def detect_ats(url: str) -> tuple[str, str] | None:
         (r"jobs\.lever\.co/([A-Za-z0-9_-]+)", "lever"),
         (r"jobs\.ashbyhq\.com/([A-Za-z0-9_-]+)", "ashby"),
         (r"(?:careers|jobs)\.smartrecruiters\.com/([A-Za-z0-9_&.-]+)", "smartrecruiters"),
+        (r"apply\.workable\.com/([A-Za-z0-9_-]+)", "workable"),
+        (r"://([A-Za-z0-9_-]+)\.recruitee\.com", "recruitee"),
+        (r"://([A-Za-z0-9_-]+)\.eightfold\.ai", "eightfold"),
     ]:
         m = re.search(pat, u, re.I)
         if m:
             return ats, m.group(1).split("/")[0]
+    m = re.search(r"://([A-Za-z0-9_-]+)\.workable\.com", u, re.I)     # subdomain form
+    if m and m.group(1).lower() not in ("www", "apply"):
+        return "workable", m.group(1)
     m = re.search(r"://([A-Za-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com/(?:[A-Za-z]{2}-[A-Za-z]{2}/)?([A-Za-z0-9_-]+)",
                   u, re.I)
     if m:
@@ -125,6 +131,34 @@ class ATSSource(Source):
                 out.append(Job(title=it.get("name", ""), company=company, location=locstr, url=url,
                                description="", posted_date=str(it.get("releasedDate", "")),
                                source=self.name).finalize())
+        elif ats == "workable":
+            r = requests.get(f"https://apply.workable.com/api/v3/accounts/{token}/jobs",
+                             timeout=30, headers=_UA)
+            r.raise_for_status()
+            for it in r.json().get("results", []):
+                loc = it.get("location") or {}
+                locstr = ", ".join(x for x in [loc.get("city"), loc.get("country")] if x)
+                out.append(Job(title=it.get("title", ""), company=company, location=locstr,
+                               url=it.get("url") or it.get("application_url") or "",
+                               description=it.get("description", ""), source=self.name).finalize())
+        elif ats == "recruitee":
+            r = requests.get(f"https://{token}.recruitee.com/api/offers/", timeout=30, headers=_UA)
+            r.raise_for_status()
+            for it in r.json().get("offers", []):
+                out.append(Job(title=it.get("title", ""), company=company,
+                               location=it.get("location", "") or it.get("city", ""),
+                               url=it.get("careers_url") or it.get("careers_apply_url") or "",
+                               description=it.get("description", ""), source=self.name).finalize())
+        elif ats == "eightfold":
+            r = requests.get(f"https://{token}.eightfold.ai/api/apply/v2/jobs",
+                             params={"num": 50, "start": 0, "domain": f"{token}.com"},
+                             timeout=30, headers=_UA)
+            r.raise_for_status()
+            for it in r.json().get("positions", []):
+                out.append(Job(title=it.get("name", ""), company=company,
+                               location=it.get("location", "") or "United Kingdom",
+                               url=it.get("canonicalPositionUrl") or it.get("positionUrl") or "",
+                               description=it.get("job_description", "") or "", source=self.name).finalize())
         elif ats == "workday":
             tenant, dc, site = token.split("|")
             api = f"https://{tenant}.{dc}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs"

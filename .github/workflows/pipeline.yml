@@ -1,14 +1,15 @@
 name: jobops-pipeline
 
 on:
-  schedule:                     # one sector per run, all 7 once/day with gaps (UTC). --sector auto maps hour->sector
-    - cron: "10 6 * * *"        # Civil Services (also the daily broad market sweep)
-    - cron: "10 8 * * *"        # Banking
-    - cron: "10 10 * * *"       # Retail & E-Com
-    - cron: "10 12 * * *"       # Product Based-Tech Companies
-    - cron: "10 14 * * *"       # Insurance & Health
-    - cron: "10 16 * * *"       # Energy Transport and Manufact
-    - cron: "10 18 * * *"       # Service Based Tech companies
+  schedule:                     # daily broad sweep + one sector per run (UTC). --sector auto maps hour->run
+    - cron: "10 5 * * *"        # FULL broad market sweep (Reed/Adzuna + broad SERP + gov + LinkedIn)
+    - cron: "10 7 * * *"        # Civil Services
+    - cron: "10 9 * * *"        # Banking
+    - cron: "10 11 * * *"       # Retail & E-Com
+    - cron: "10 13 * * *"       # Product Based-Tech Companies
+    - cron: "10 15 * * *"       # Insurance & Health
+    - cron: "10 17 * * *"       # Energy Transport and Manufact
+    - cron: "10 19 * * *"       # Service Based Tech companies
   workflow_dispatch:
     inputs:
       mode:
@@ -46,6 +47,8 @@ jobs:
           APIFY_TOKEN_2: ${{ secrets.APIFY_TOKEN_2 }}
           APIFY_TOKEN_3: ${{ secrets.APIFY_TOKEN_3 }}
           APIFY_TOKEN_4: ${{ secrets.APIFY_TOKEN_4 }}
+          BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
+          BRIGHTDATA_SERP_ZONE: ${{ secrets.BRIGHTDATA_SERP_ZONE }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: >-

@@ -29,14 +29,17 @@ def _resolve_sector(arg: str | None, cfg) -> str | None:
     if arg.lower() == "auto":
         if not (rot.get("enabled") and sectors):
             return None
-        hours = rot.get("schedule_hours_utc", [])[:len(sectors)]
         h = datetime.datetime.now(datetime.timezone.utc).hour
+        broad_h = rot.get("broad_hour_utc")
+        if broad_h is not None and h == broad_h:   # dedicated daily broad/full run
+            return None
+        hours = rot.get("schedule_hours_utc", [])[:len(sectors)]
         idx = None
         for i, sh in enumerate(hours):
             if h >= sh:
                 idx = i
-        if idx is None:           # before the day's first slot -> last sector (rolled over)
-            idx = len(sectors) - 1
+        if idx is None:           # off-schedule / before first sector slot -> full broad run
+            return None
         return sectors[idx]
     for s in sectors:             # explicit name, case-insensitive
         if s.lower() == arg.lower():

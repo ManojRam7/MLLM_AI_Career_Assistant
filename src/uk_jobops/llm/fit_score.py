@@ -8,10 +8,14 @@ from ..models import FitResult
 from .client import LLM, LLMError
 
 SYSTEM = (
-    "You are a meticulous UK data-science recruiter. Judge how well the candidate's "
-    "real experience fits the job. Be sceptical: flag ghost/scam postings and roles "
-    "that are too senior. Score 0-100 (0=irrelevant, 100=ideal). Be honest about gaps. "
-    "Return JSON only."
+    "You are a meticulous UK data-science recruiter scoring BOTH data-science and data-analysis "
+    "roles. Judge how well the candidate's real experience fits the job. Be sceptical: flag "
+    "ghost/scam postings and roles that are too senior. "
+    "HARD RULE: if the employer is a recruitment/staffing agency, or the description is posted on "
+    "behalf of an unnamed 'client' rather than the actual employer, score <= 40 and set "
+    "ghost_flag=true. Also set ghost_flag=true for vague reposts with no real responsibilities, "
+    "no named employer, or no location/salary clarity. "
+    "Score 0-100 (0=irrelevant, 100=ideal). Be honest about gaps. Return JSON only."
 )
 
 

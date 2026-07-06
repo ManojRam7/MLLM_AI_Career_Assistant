@@ -63,6 +63,14 @@ def load_jobs(url: str) -> pd.DataFrame:
     df["notes"] = df["notes"].fillna("")
     df["fit_score"] = df["fit_score"].fillna(0).astype(int)
     df["fit"] = df["fit_score"].where(df["status"] != "new")  # blank for not-yet-scored jobs
+    # derive category for rows stored before the category column existed (backfilled server-side
+    # on the next run; done client-side here so the DS/DA tabs work immediately)
+    try:
+        from uk_jobops.filtering import job_category
+        _cat = df["category"].fillna("").astype(str)
+        df["category"] = _cat.where(_cat.str.strip() != "", df["title"].fillna("").map(job_category))
+    except Exception:
+        pass
     # locations = aggregated towns, falling back to the single location until the
     # next pipeline run populates the aggregate
     agg = (df["locations"] if "locations" in df else blank).fillna("").astype(str)
@@ -111,8 +119,98 @@ with st.sidebar:
         st.rerun()
     st.caption("Data refreshes every 60s, or click Refresh.")
 
-tab_overview, tab_pipeline, tab_tracker, tab_board, tab_cvs = st.tabs(
-    ["📊 Overview", "⚙️ Pipeline & LLMs", "✅ Live Jobs", "📋 Tracker", "📄 Tailored CVs"])
+def _priority(row) -> str:
+    """Colour-coded importance from fit score + scoring status."""
+    f = int(row.get("fit_score") or 0)
+    if row.get("status") == "new" or f <= 0:
+        return "▫️"
+    if f >= 85:
+        return "🟢"
+    if f >= 75:
+        return "🔵"
+    if f >= 65:
+        return "🟡"
+    return "⚪"
+
+
+def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
+    """Shared jobs table with filters, priority colours, and inline status/notes editing.
+    `category` limits to 'data-science' / 'data-analysis' (used by the category tabs)."""
+    st.subheader(title)
+    if caption:
+        st.caption(caption)
+    if jobs.empty:
+        st.info("No jobs yet. Run the pipeline, then refresh.")
+        return
+    base = jobs[~jobs["is_custom"]].copy()          # manual jobs live only in the Tracker
+    if category:
+        base = base[base["category"] == category]
+    if base.empty:
+        st.info("No jobs in this view yet.")
+        return
+    f1, f2, f3, f4 = st.columns([2, 2, 1, 3])
+    pick = f1.multiselect("Status", STATUSES, default=[], key=f"{key_prefix}_st")
+    srcs = f2.multiselect("Source", sorted(base["source"].dropna().unique()), key=f"{key_prefix}_src")
+    only_bucket = f3.checkbox("⭐ only", key=f"{key_prefix}_bk")
+    q = f4.text_input("Search title / company", key=f"{key_prefix}_q")
+    min_fit = st.slider("Minimum fit score", 0, 100, 0, 5, key=f"{key_prefix}_fit")
+
+    view = base
+    if pick:
+        view = view[view["status"].isin(pick)]
+    if srcs:
+        view = view[view["source"].isin(srcs)]
+    if only_bucket:
+        view = view[view["in_bucket"]]
+    if q:
+        ql = q.lower()
+        view = view[view["title"].str.lower().str.contains(ql, na=False)
+                    | view["company"].str.lower().str.contains(ql, na=False)]
+    view = view[view["fit_score"] >= min_fit].sort_values(
+        ["fit_score", "in_bucket"], ascending=False).reset_index(drop=True)
+    view = view.copy()
+    view["▲"] = view.apply(_priority, axis=1)
+    st.caption(f"Showing {len(view)} jobs.  🟢 ≥85 · 🔵 75-84 · 🟡 65-74 · ⚪ <65 · ▫️ unscored · ⭐ target company. "
+               "Edit **status** and **notes**, then Save.")
+    cols = ["▲", "new", "title", "company", "category", "locations", "posted", "fetched",
+            "source", "in_bucket", "fit", "status", "notes", "url"]
+    if category:
+        cols.remove("category")
+    cols = [c for c in cols if c in view.columns]
+    fkey = abs(hash(f"{key_prefix}|{sorted(pick)}|{sorted(srcs)}|{only_bucket}|{q}|{min_fit}"))
+    edited = st.data_editor(
+        view[cols], hide_index=True, width="stretch", num_rows="fixed", height=620,
+        key=f"{key_prefix}_ed_{fkey}",
+        disabled=[c for c in cols if c not in ("status", "notes")],
+        column_config={
+            "▲": st.column_config.TextColumn("▲", width="small",
+                                             help="Priority: 🟢≥85 🔵75+ 🟡65+ ⚪<65 ▫️unscored"),
+            "status": st.column_config.SelectboxColumn("status", options=STATUSES, width="small"),
+            "category": st.column_config.TextColumn("category", width="small"),
+            "in_bucket": st.column_config.CheckboxColumn("⭐"),
+            "new": st.column_config.CheckboxColumn("🆕"),
+            "locations": st.column_config.TextColumn("locations", width="medium"),
+            "posted": st.column_config.TextColumn("posted", width="small"),
+            "fetched": st.column_config.TextColumn("fetched (UTC)", width="small"),
+            "fit": st.column_config.NumberColumn("fit", format="%d", width="small"),
+            "url": st.column_config.LinkColumn("link", display_text="open"),
+            "notes": st.column_config.TextColumn("notes", width="large")})
+    if st.button("💾 Save changes", type="primary", key=f"{key_prefix}_save"):
+        store = get_store(url)
+        keys, n = view["dedupe_key"].tolist(), 0
+        for i, key in enumerate(keys):
+            ns, nn = edited.iloc[i]["status"], str(edited.iloc[i]["notes"] or "")
+            if ns != view.iloc[i]["status"] or nn != str(view.iloc[i]["notes"] or ""):
+                store.set_status(key, ns, notes=nn)
+                n += 1
+        st.cache_data.clear()
+        st.success(f"Saved {n} change(s).")
+        st.rerun()
+
+
+(tab_overview, tab_jobs, tab_ds, tab_da, tab_source, tab_pipeline, tab_board, tab_cvs) = st.tabs(
+    ["📊 Overview", "💼 Jobs", "🔬 Data Science", "📈 Data Analysis", "🗂️ By Source",
+     "⚙️ Runs & LLMs", "📋 Tracker", "📄 Tailored CVs"])
 
 # ---------------------------------------------------------------- OVERVIEW
 with tab_overview:
@@ -126,6 +224,10 @@ with tab_overview:
         c[2].metric("Shortlisted", sc["shortlisted"])
         c[3].metric("Tailored", sc["tailored"])
         c[4].metric("Applied", sc["applied"] + sc["interview"] + sc["offer"])
+        _ds = int((jobs["category"] == "data-science").sum())
+        _da = int((jobs["category"] == "data-analysis").sum())
+        st.caption(f"🔬 Data Science: **{_ds}**  ·  📈 Data Analysis: **{_da}**  ·  "
+                   f"🟢 strong (≥85): **{int((jobs['fit_score'] >= 85).sum())}**")
 
         left, right = st.columns(2)
         with left:
@@ -239,71 +341,37 @@ with tab_pipeline:
                 st.json(latest)
         st.line_chart(runs.set_index("run_at")[["discovered", "scored", "tailored"]].iloc[::-1])
 
-# ----------------------------------------------------------------- LIVE JOBS
-with tab_tracker:
-    st.subheader("Live jobs")
-    st.caption("Every job fetched from all sources. Add the ones you're pursuing from the **Tracker** tab.")
+# ----------------------------------------------------------------- JOBS / DS / DA
+with tab_jobs:
+    render_jobs(jobs, url, "jobs", None, "💼 All jobs",
+                "Every job fetched from all sources, both categories. Add ones you're pursuing from the Tracker tab.")
+
+with tab_ds:
+    render_jobs(jobs, url, "ds", "data-science", "🔬 Data Science roles",
+                "Data Scientist, ML / AI Engineer, Applied / Decision Scientist and similar.")
+
+with tab_da:
+    render_jobs(jobs, url, "da", "data-analysis", "📈 Data Analysis roles",
+                "Data Analyst, Analytics Engineer, BI / Insight / MI Analyst and similar (incl. civil service).")
+
+# ----------------------------------------------------------------- BY SOURCE
+with tab_source:
+    st.subheader("🗂️ Jobs by source")
+    st.caption("What each search operation contributed. Times/counts update every run.")
     if jobs.empty:
         st.info("No jobs yet.")
     else:
-        f1, f2, f3, f4, f5 = st.columns([2, 2, 2, 1, 2])
-        pick = f1.multiselect("Status", STATUSES, default=[])
-        srcs = f2.multiselect("Source", sorted(jobs["source"].dropna().unique()))
-        cats = f3.multiselect("Category", ["data-science", "data-analysis"])
-        only_bucket = f4.checkbox("⭐ only")
-        query = f5.text_input("Search title / company")
-        min_fit = st.slider("Minimum fit score", 0, 100, 0, 5)
-
-        view = jobs[~jobs["is_custom"]].copy()   # manual jobs live only in the Tracker
-        if pick:
-            view = view[view["status"].isin(pick)]
-        if srcs:
-            view = view[view["source"].isin(srcs)]
-        if cats:
-            view = view[view["category"].isin(cats)]
-        if only_bucket:
-            view = view[view["in_bucket"]]
-        if query:
-            q = query.lower()
-            view = view[view["title"].str.lower().str.contains(q, na=False)
-                        | view["company"].str.lower().str.contains(q, na=False)]
-        view = view[view["fit_score"] >= min_fit].reset_index(drop=True)
-        st.caption(f"Showing {len(view)} of {len(jobs)} jobs. Edit **status** and **notes**, then Save.")
-
-        cols = ["new", "title", "company", "category", "locations", "posted", "fetched", "source",
-                "in_bucket", "fit", "status", "notes", "url"]
-        cols = [c for c in cols if c in view.columns]
-        # editor key depends on the active filters so the grid re-renders cleanly when
-        # they change (a fixed key kept stale edit-state and made filtering look broken)
-        fkey = abs(hash(f"{sorted(pick)}|{sorted(srcs)}|{sorted(cats)}|{only_bucket}|{query}|{min_fit}"))
-        edited = st.data_editor(
-            view[cols], hide_index=True, width="stretch", num_rows="fixed",
-            height=680, key=f"tracker_{fkey}",
-            disabled=[c for c in cols if c not in ("status", "notes")],
-            column_config={
-                "status": st.column_config.SelectboxColumn("status", options=STATUSES, width="small"),
-                "category": st.column_config.TextColumn("category", width="small"),
-                "in_bucket": st.column_config.CheckboxColumn("⭐"),
-                "new": st.column_config.CheckboxColumn("🆕"),
-                "locations": st.column_config.TextColumn("locations", width="medium"),
-                "posted": st.column_config.TextColumn("posted", width="small"),
-                "fetched": st.column_config.TextColumn("fetched (UTC)", width="small"),
-                "fit": st.column_config.NumberColumn("fit", format="%d", width="small"),
-                "url": st.column_config.LinkColumn("link", display_text="open"),
-                "notes": st.column_config.TextColumn("notes", width="large")})
-
-        if st.button("💾 Save changes", type="primary"):
-            store = get_store(url)
-            keys = view["dedupe_key"].tolist()
-            n = 0
-            for i, key in enumerate(keys):
-                new_status, new_notes = edited.iloc[i]["status"], str(edited.iloc[i]["notes"] or "")
-                if new_status != view.iloc[i]["status"] or new_notes != str(view.iloc[i]["notes"] or ""):
-                    store.set_status(key, new_status, notes=new_notes)
-                    n += 1
-            st.cache_data.clear()
-            st.success(f"Saved {n} change(s).")
-            st.rerun()
+        b = jobs[~jobs["is_custom"]].copy()
+        agg = (b.groupby("source").agg(
+                   jobs=("dedupe_key", "count"),
+                   avg_fit=("fit_score", lambda s: round(s[s > 0].mean(), 1) if (s > 0).any() else 0),
+                   bucket=("in_bucket", "sum"),
+                   DS=("category", lambda s: int((s == "data-science").sum())),
+                   DA=("category", lambda s: int((s == "data-analysis").sum())))
+               .reset_index().sort_values("jobs", ascending=False))
+        st.dataframe(agg, hide_index=True, width="stretch",
+                     column_config={"avg_fit": st.column_config.NumberColumn("avg fit", format="%.1f")})
+        st.caption("Use the **Source** filter inside the Jobs / Data Science / Data Analysis tabs to drill in.")
 
 # --------------------------------------------------------------- TRACKER (KANBAN)
 with tab_board:
@@ -326,7 +394,7 @@ with tab_board:
                     st.cache_data.clear()
                     st.success(f"Added '{_t}'.")
                     st.rerun()
-    with cb.expander("📥 Add from fetched jobs (from Live Jobs)"):
+    with cb.expander("📥 Add from fetched jobs (from the Jobs tab)"):
         if jobs.empty:
             st.caption("No fetched jobs yet.")
         else:
@@ -343,7 +411,7 @@ with tab_board:
     st.divider()
     tracked = jobs[jobs["tracked"]] if not jobs.empty else jobs.iloc[0:0]
     if tracked.empty:
-        st.info("No jobs in your tracker yet — add some above (manually or from Live Jobs).")
+        st.info("No jobs in your tracker yet — add some above (manually or from the Jobs tab).")
     else:
         STAGES = [("📌 To apply", "#4f8cff", "shortlisted"),
                   ("✅ Applied", "#5ad19b", "applied"),

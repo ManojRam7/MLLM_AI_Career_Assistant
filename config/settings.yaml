@@ -104,6 +104,35 @@ seniority:
     - "SThree"
     - "Nigel Frank"
     - "Twenty AI"
+    - "McGregor Boyall"
+    - "Harnham"
+    - "Yolk Recruitment"
+    - "Understanding Recruitment"
+    - "Client Server"
+    - "La Fosse"
+    - "Data Idols"
+    - "Datatech"
+    - "Xcede"
+    - "Cathcart"
+    - "Formula Recruitment"
+    - "Hamilton Barnes"
+    - "Trilogy International"
+    - "Signify Technology"
+    - "Oho Group"
+    - "Explore Group"
+    - "InterQuest"
+    - "Spectrum IT"
+    - "Tenth Revolution"
+    - "Frank Recruitment"
+    - "Circle Recruitment"
+    - "Empiric"
+    - "Halian"
+    - "Areti Group"
+    - "Stott and May"
+    - "Kado"
+    - "Salt"
+    - "IC Resources"
+    - "Caspian One"
 
 scoring:
   tailor_threshold: 70           # only tailor a CV when fit score >= this (saves tokens)
@@ -120,10 +149,29 @@ notify:
 sources:
   reed: { enabled: true }
   adzuna: { enabled: true, country: "gb" }
-  ats: { enabled: true }         # Greenhouse / Lever / Ashby for bucket-list companies
+  ats: { enabled: true }         # Greenhouse/Lever/Ashby/SmartRecruiters/Workday/Workable/Recruitee/Eightfold
   careers_playwright: { enabled: false }
-  apify:                         # Google Jobs via Apify (LinkedIn/Indeed/Glassdoor/Totaljobs/CV-Library/NHS/gov)
+  brightdata:                    # Google for Jobs via Bright Data SERP API (main engine; replaces Apify)
     enabled: true
+    country: "gb"
+    pages: 1                     # SERP pages per query (each page = 1 billed request; keep low for credits)
+    top_companies_per_run: 5     # rotating per-company sample for the active sector (DS + DA each)
+    max_queries: 22              # broad + gov/site + per-company, capped for credit control
+    gov_queries: ["data analyst", "data scientist", "data engineer"]
+    civil_service_sectors: ["Civil Services"]   # add civilservicejobs site: queries on this sector's run
+    nhs_sectors: ["Insurance & Health"]         # add jobs.nhs.uk site: queries on this sector's run
+    linkedin_site: false         # set true to add site:uk.linkedin.com/jobs queries on the broad run
+    extra_queries:               # broad market queries (both categories) - run on the daily full/broad run
+      - "data scientist United Kingdom"
+      - "machine learning engineer United Kingdom"
+      - "data analyst United Kingdom"
+      - "data analytics United Kingdom"
+      - "business intelligence analyst United Kingdom"
+      - "analytics engineer United Kingdom"
+      - "AI engineer United Kingdom"
+      - "graduate data scientist United Kingdom"
+  apify:                         # legacy Google Jobs via Apify - disabled (credits spent); kept as fallback
+    enabled: false
     actor: "johnvc~google-jobs-scraper"
     top_companies_per_run: 5     # rotating sample of target companies; each yields a DS + a DA query
     num_results: 80              # deep pagination so more of the market is captured (trimmed to save free credits)
@@ -143,8 +191,8 @@ sources:
       - "data analyst NHS"
       - "data analyst UK government"
       - "business intelligence analyst United Kingdom"
-  gov:                           # government portals: NHS Jobs + Civil Service Jobs
-    enabled: true                # Civil Service Jobs covers ~100 civil-service employers in one search
+  gov:                           # HTML gov scrapers - disabled; Bright Data SERP covers gov via site: queries
+    enabled: false               # set true only if you want the direct-HTML NHS/Civil Service fallback too
     queries: ["data analyst", "data scientist", "data engineer"]
     max_pages: 2
     civil_service_sectors: ["Civil Services"]     # run Civil Service Jobs on this sector's run
@@ -164,8 +212,9 @@ rotation:                        # one sector per scheduled run; all 7 covered o
     - "Insurance & Health"
     - "Energy Transport and Manufact"
     - "Service Based Tech companies"
-  schedule_hours_utc: [6, 8, 10, 12, 14, 16, 18]   # `--sector auto` maps the current UTC hour -> sector
-  apify_broad_on_index: 0        # broad market sweep (Reed/Adzuna + broad Apify/gov) runs only on this sector
+  schedule_hours_utc: [7, 9, 11, 13, 15, 17, 19]   # `--sector auto` maps the current UTC hour -> sector
+  broad_hour_utc: 5              # a dedicated daily FULL/broad run (all sources, no sector focus) at this hour
+  apify_broad_on_index: -1       # -1 = no sector run does the broad sweep (only the dedicated full run does)
 
 llm:
   # Tier reality: DeepSeek = paid credits (cheap, bulk scoring); Gemini = Google AI Pro
