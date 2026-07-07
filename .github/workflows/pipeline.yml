@@ -25,7 +25,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 55        # every-company sector runs make ~150-260 SERP calls
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

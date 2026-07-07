@@ -29,6 +29,7 @@ class Job:
     fetched_at: str = ""
     seniority: str = ""
     category: str = ""           # "data-science" | "data-analysis" | "" (derived from title)
+    sector: str = ""             # Master-List sector of the employer (derived from company)
     is_target: bool = True
     fit_score: int = 0
     fit_reasoning: str = ""

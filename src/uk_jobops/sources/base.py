@@ -12,6 +12,7 @@ class SourceResult:
     jobs: list[Job] = field(default_factory=list)
     status: str = "ok"          # ok | skipped | error
     message: str = ""
+    meta: dict = field(default_factory=dict)   # optional extras (e.g. per-company coverage)
 
 
 class Source:

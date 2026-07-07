@@ -2,8 +2,12 @@
 Send functions return diagnostics so the pipeline can surface *why* Telegram failed."""
 from __future__ import annotations
 
-import re
+import html
 from pathlib import Path
+
+
+def _e(s) -> str:
+    return html.escape(str(s or ""))
 
 
 def write_digest(rows: list[dict], out: str = "output/digest.md") -> str:
@@ -24,30 +28,28 @@ def _level(fit: int) -> tuple[str, str]:
     return "🔎", "Worth a look"
 
 
-def _clean(s) -> str:
-    return re.sub(r"[_*`\[\]]", "", str(s or "")).strip()
-
-
 def _message(r: dict, name: str) -> str:
+    """HTML-formatted alert (HTML mode avoids Markdown parse errors from '_' in tracking URLs)."""
     fit = int(r.get("fit_score") or 0)
     emoji, level = _level(fit)
     if r.get("bucket_tier") == "top100":
-        tag = "  ⭐ *Top-100 target company*"
+        tag = "  ⭐ <b>Top-100 target company</b>"
     elif r.get("in_bucket"):
-        tag = "  ⭐ *target company*"
+        tag = "  ⭐ <b>target company</b>"
     else:
         tag = ""
-    reason = _clean((r.get("fit_reasoning") or "").split(". ")[0]).rstrip(".")
-    loc = _clean(r.get("locations") or r.get("location") or "")
-    parts = [f"{emoji} *{level}, {name}!*",
-             f"*{_clean(r.get('title'))}* — {_clean(r.get('company'))}",
-             f"📊 Fit *{fit}/100*{tag}"]
+    reason = _e((r.get("fit_reasoning") or "").split(". ")[0]).rstrip(".")
+    loc = _e(r.get("locations") or r.get("location") or "")
+    parts = [f"{emoji} <b>{_e(level)}, {_e(name)}!</b>",
+             f"<b>{_e(r.get('title'))}</b> — {_e(r.get('company'))}",
+             f"📊 Fit <b>{fit}/100</b>{tag}"]
     if loc:
         parts.append(f"📍 {loc}")
     if reason:
         parts.append(f"✅ {reason}.")
     if r.get("url"):
-        parts.append(f"🔗 {r.get('url')}")
+        u = _e(r.get("url"))
+        parts.append(f'🔗 <a href="{u}">open job</a>')
     return "\n".join(parts)
 
 
@@ -59,7 +61,7 @@ def send_message(token: str, chat_id: str, text: str) -> tuple[bool, str]:
 
     try:
         r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
-                          json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown",
+                          json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
                                 "disable_web_page_preview": True}, timeout=20)
         if r.status_code == 200:
             return True, "ok"

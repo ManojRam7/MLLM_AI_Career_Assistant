@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from . import notify
-from .bucketlist import bucket_tier, load_bucket_tiers
+from .bucketlist import bucket_tier, company_sector, load_bucket_tiers, load_company_sectors
 from .config import Config, load_config
 from .dedupe import dedupe
 from .filtering import apply_filters
@@ -41,14 +41,17 @@ class Pipeline:
         # per-company sample for the active sector.
         bd = src_cfg.get("brightdata", {})
         if bd.get("enabled") and sec.brightdata_api_key:
+            from .bucketlist import companies_in_sector
             from .sources.brightdata_serp import BrightDataSerpSource
+            # sector run => search EVERY company in that sector; broad run => market queries only.
+            companies = ([c for c, _ in companies_in_sector(self.cfg.path(bucket_path), sector)]
+                         if sector else [])
             out.append(BrightDataSerpSource(
                 sec.brightdata_api_key, sec.brightdata_serp_zone,
-                bucket_path=self.cfg.path(bucket_path), sector=sector, run_broad=run_broad,
+                sector=sector, run_broad=run_broad,
                 extra_queries=bd.get("extra_queries", []),
                 site_queries=self._gov_site_queries(sector, run_broad, bd),
-                search_domains=bd.get("search_domains"),
-                top_companies_per_run=bd.get("top_companies_per_run", 5),
+                search_domains=bd.get("search_domains"), companies=companies,
                 max_queries=bd.get("max_queries", 20), pages=bd.get("pages", 1),
                 country=bd.get("country", "gb")))
         return out
@@ -75,7 +78,8 @@ class Pipeline:
             res = src.fetch(queries=search.get("queries", []), locations=search.get("locations", []),
                             recency_days=recency_days, limit=search.get("max_per_source", 100))
             jobs.extend(res.jobs)
-            statuses.append({"source": res.source, "status": res.status, "count": len(res.jobs), "message": res.message})
+            statuses.append({"source": res.source, "status": res.status, "count": len(res.jobs),
+                             "message": res.message, "meta": res.meta})
         return jobs, statuses
 
     def run(self, mode: str = "recurring", sector: str | None = None) -> dict:
@@ -100,11 +104,13 @@ class Pipeline:
 
         # Boost: tag jobs by bucket tier so top-100 target companies jump the
         # scoring/tailoring queue (db queries order top100 first, then any bucket).
-        tiers = load_bucket_tiers(
-            self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_master.csv")))
+        _bpath = self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_master.csv"))
+        tiers = load_bucket_tiers(_bpath)
+        sec_map = load_company_sectors(_bpath)
         for j in targets:
             j.bucket_tier = bucket_tier(j.company, tiers)
             j.in_bucket = bool(j.bucket_tier)
+            j.sector = company_sector(j.company, sec_map)
 
         # strict mode: keep ONLY jobs from bucket-list target companies (max focus)
         bucket_only_dropped = 0
@@ -121,14 +127,16 @@ class Pipeline:
                    "category_data_analysis": sum(1 for j in targets if j.category == "data-analysis"),
                    "bucket_only_dropped": bucket_only_dropped,
                    "sources": statuses, "scored": 0, "tailored": 0}
+        _bd_meta = next((s.get("meta", {}) for s in statuses if "Bright Data" in s.get("source", "")), {})
+        summary["companies_searched"] = _bd_meta.get("companies_queried", 0)
+        summary["companies_with_roles"] = _bd_meta.get("companies_with_roles", 0)
+        summary["companies_with_roles_names"] = _bd_meta.get("with_roles_names", [])
         if sector:
             from .bucketlist import companies_in_sector
-            summary["companies_searched"] = len(companies_in_sector(
+            _total = len(companies_in_sector(
                 self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_master.csv")), sector))
-        else:
-            _bd = self.s.get("sources", {}).get("brightdata", {})
-            summary["companies_searched"] = (_bd.get("top_companies_per_run", 0)
-                                             if _bd.get("enabled") and self.cfg.secrets.brightdata_api_key else 0)
+            summary["companies_in_sector"] = _total
+            summary["companies_missed"] = max(0, _total - _bd_meta.get("companies_queried", 0))
 
         # snapshot for offline inspection
         Path("output").mkdir(exist_ok=True)
@@ -251,15 +259,19 @@ class Pipeline:
             if ncfg.get("heartbeat", True):
                 src_line = " · ".join(f"{s.get('source', '?').split()[0]} {s.get('count', 0)}"
                                       for s in summary.get("sources", []))
-                _title = (f"✅ *{sector} sector* complete" if sector
-                          else "🔔 *Job Search Assistant* — run complete")
+                import html as _html
+                _title = (f"✅ <b>{_html.escape(sector)} sector</b> complete" if sector
+                          else "🔔 <b>Job Search Assistant</b> — run complete")
                 hb = (f"{_title}\n"
                       f"Discovered {summary.get('discovered', 0)} · new {summary.get('stored_new', 0)} · "
                       f"scored {summary.get('scored', 0)} · tailored {summary.get('tailored', 0)}\n"
                       + (f"📥 {src_line}\n" if src_line else "")
                       + f"🧭 DS {summary.get('category_data_science', 0)} · "
                       + f"DA {summary.get('category_data_analysis', 0)}\n"
-                      + f"🔎 {summary.get('companies_searched', 0)} target companies searched · "
+                      + (f"🔎 {summary.get('companies_searched', 0)}/{summary.get('companies_in_sector', '?')} "
+                         f"companies searched · {summary.get('companies_with_roles', 0)} with roles\n"
+                         if sector else
+                         f"🔎 {summary.get('companies_searched', 0)} companies searched\n")
                       + f"{len(alerts)} new alerts below")
                 if summary.get("llm_note"):
                     hb += f"\n⚠️ {summary['llm_note']}"

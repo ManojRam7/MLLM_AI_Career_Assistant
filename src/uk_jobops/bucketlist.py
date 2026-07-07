@@ -75,6 +75,33 @@ def list_sectors(path: str | Path) -> list[str]:
     return seen
 
 
+def load_company_sectors(path: str | Path) -> dict[str, str]:
+    """{normalised_company: sector} for tagging each job with its Master-List sector."""
+    p = Path(path)
+    if not p.exists():
+        return {}
+    out: dict[str, str] = {}
+    with p.open(encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f):
+            c, sec = _core(row.get("company_name") or ""), (row.get("sector") or "").strip()
+            if c and sec and c not in out:
+                out[c] = sec
+    return out
+
+
+def company_sector(company: str, mapping: dict[str, str]) -> str:
+    """Return the Master-List sector for an employer name, or '' if not a target company."""
+    c = _core(company)
+    if not c or not mapping:
+        return ""
+    if c in mapping:
+        return mapping[c]
+    for n, s in mapping.items():
+        if len(n) >= 5 and (n in c or c in n):
+            return s
+    return ""
+
+
 def companies_in_sector(path: str | Path, sector: str | None = None) -> list[tuple[str, str]]:
     """[(company_name, careers_url)] optionally filtered to one sector."""
     p = Path(path)

@@ -1,15 +1,13 @@
-"""Google job discovery via the Bright Data SERP API.
+"""Google job discovery via the Bright Data SERP API (brd_json organic results).
 
-Bright Data's brd_json=1 parses STANDARD Google search into `organic` results (it does NOT
-structure the ibp=htl;jobs vertical widget). So we run standard searches that are targeted at
-job boards + government portals so each organic result IS an individual job posting:
+Two modes:
+  - BROAD run: market-wide board-scoped queries + gov site: queries.
+  - SECTOR run: one combined query for EVERY company in the sector, so we can report exactly
+    which companies were searched, which had roles, and which were missed.
 
-  <role> United Kingdom (site:uk.linkedin.com/jobs OR site:reed.co.uk OR site:totaljobs.com ...)
-  site:civilservicejobs.service.gov.uk <role>        (gov)
-  "<company>" <role> United Kingdom                  (rotating per-company for the active sector)
-
-Cost: broad-query strategy keeps this to ~22 SERP calls/run; Bright Data bills per 1,000
-successful requests (failures free). Fails gracefully - any error returns an error status."""
+Only genuine INDIVIDUAL job postings are kept (LinkedIn view / Reed slug-ID / NHS jobadvert /
+Civil-Service jcode / Greenhouse-Lever-Ashby / job-listing). Listing/search pages
+(Glassdoor 'SRCH_', Reed '...-jobs') are dropped. Fails gracefully."""
 from __future__ import annotations
 
 import html
@@ -23,25 +21,46 @@ from .base import Source, SourceResult
 
 ENDPOINT = "https://api.brightdata.com/request"
 _TAG = re.compile(r"<[^>]+>")
-# links that look like an individual posting (not a search/listing page)
-_JOB_LINK = re.compile(r"(/jobs?/view|/job/|/jobs/\d|/vacancy|/vacancies/|viewjob|/job-detail|"
-                       r"reed\.co\.uk/jobs/|totaljobs\.com/job/|cv-library\.co\.uk/job/|"
-                       r"civilservicejobs\.service\.gov\.uk/csr|jobs\.nhs\.uk/candidate/jobadvert)", re.I)
+
+# ACCEPT: URL looks like one specific posting
+_INDIVIDUAL = re.compile(
+    r"(jobs\.nhs\.uk/candidate/jobadvert/|"
+    r"linkedin\.com/jobs/view/|"
+    r"reed\.co\.uk/jobs/[^/]+/\d|"
+    r"totaljobs\.com/job/\d|"
+    r"cv-library\.co\.uk/job/\d|"
+    r"glassdoor\.[a-z.]+/job-listing/|"
+    r"indeed\.[a-z.]+/(viewjob|rc/clk)|"
+    r"civilservicejobs\.service\.gov\.uk/csr/[^\"']*jcode=|"
+    r"alooba\.com/[a-z]{2}/job/|"
+    r"greenhouse\.io/[^/]+/jobs/\d|"
+    r"lever\.co/[^/]+/[0-9a-f]{8}|"
+    r"ashbyhq\.com/[^/]+/[0-9a-f]{8}|"
+    r"workable\.com/[a-z]+/[A-F0-9]{6}|"
+    r"smartrecruiters\.com/[^/]+/\d)", re.I)
+# REJECT: URL is a search/listing page
+_LISTING = re.compile(
+    r"(SRCH_|/jobs/[a-z0-9-]*-jobs(\b|/|\?|$)|/jobs(\?|$)|/jobs-in-|glassdoor\.[a-z.]+/Job/|/browse|/search)", re.I)
+# REJECT: title is a listing ("1043 data scientist jobs", "Data Analyst Jobs", "... jobs in London")
+_LISTING_TITLE = re.compile(r"(^\s*[\d,]+\s+.*\bjobs\b|\bjobs\b\s*$|\bjobs?\s+in\b)", re.I)
 
 
 def _clean(s: str) -> str:
     return " ".join(html.unescape(_TAG.sub(" ", s or "")).split())
 
 
+def _is_job(url: str, title: str) -> bool:
+    return bool(_INDIVIDUAL.search(url) and not _LISTING.search(url) and not _LISTING_TITLE.search(title))
+
+
 class BrightDataSerpSource(Source):
     name = "Google (Bright Data)"
 
-    def __init__(self, api_key, zone="serp", *, bucket_path=None, sector=None, run_broad=True,
+    def __init__(self, api_key, zone="serp", *, sector=None, run_broad=True,
                  extra_queries=None, site_queries=None, search_domains=None,
-                 top_companies_per_run=5, max_queries=22, pages=1, country="gb"):
+                 companies=None, max_queries=22, pages=1, country="gb"):
         self.api_key = api_key
         self.zone = zone or "serp"
-        self.bucket_path = bucket_path
         self.sector = sector
         self.run_broad = run_broad
         self.extra_queries = list(extra_queries or [])
@@ -49,10 +68,11 @@ class BrightDataSerpSource(Source):
         self.search_domains = list(search_domains or [
             "uk.linkedin.com/jobs", "www.reed.co.uk/jobs", "www.totaljobs.com",
             "www.cv-library.co.uk", "uk.indeed.com", "www.glassdoor.co.uk"])
-        self.top_companies_per_run = top_companies_per_run
-        self.max_queries = max_queries
+        self.companies = list(companies or [])       # per-company search targets (sector run = ALL)
+        self.max_queries = max_queries               # caps only the broad market queries
         self.pages = max(1, pages)
         self.country = country
+        self._first_error = ""
 
     def _board_filter(self) -> str:
         return "(" + " OR ".join(f"site:{d}" for d in self.search_domains) + ")"
@@ -61,44 +81,46 @@ class BrightDataSerpSource(Source):
         if not self.api_key:
             return SourceResult(self.name, status="skipped", message="no BRIGHTDATA_API_KEY set")
         board = self._board_filter()
-        plan: list[tuple[str, str]] = []                 # (query, company_hint)
+        broad_q: list[str] = []
         if self.run_broad:
-            for q in self.extra_queries + list(queries[:2]):
-                plan.append((f"{q} {board}", ""))        # broad role queries scoped to job boards
-            for q in self.site_queries:                  # gov / LinkedIn site: queries (company known-ish)
-                hint = "UK Civil Service" if "civilservicejobs" in q else ("NHS" if "jobs.nhs" in q else "")
-                plan.append((q, hint))
-        if self.bucket_path:
-            from ..bucketlist import sample_top_companies
-            for c in sample_top_companies(self.bucket_path, self.top_companies_per_run, self.sector):
-                plan.append((f'"{c}" data scientist United Kingdom', c))
-                plan.append((f'"{c}" data analyst United Kingdom', c))
-        # de-dup queries, cap for cost
-        seen_q, uniq_plan = set(), []
-        for q, h in plan:
-            if q in seen_q:
-                continue
-            seen_q.add(q)
-            uniq_plan.append((q, h))
-        uniq_plan = uniq_plan[:self.max_queries]
-        if not uniq_plan:
-            return SourceResult(self.name, status="skipped", message="no queries for this run")
+            broad_q = [f"{q} {board}" for q in (self.extra_queries + list(queries[:2]))] + self.site_queries
+            broad_q = list(dict.fromkeys(broad_q))[:self.max_queries]
+        else:
+            broad_q = list(self.site_queries)        # gov site: queries still run on a gov sector run
 
         jobs: list[Job] = []
         errors = calls = 0
-        for q, hint in uniq_plan:
+
+        # 1) broad / gov queries
+        for q in broad_q:
             for page in range(self.pages):
                 data = self._serp(q, start=page * 10)
                 calls += 1
                 if data is None:
                     errors += 1
                     break
-                found = self._extract(data, q, hint)
+                found = self._extract(data, q, "")
                 if not found:
                     break
                 jobs.extend(found)
-            if len(jobs) >= limit:
-                break
+
+        # 2) per-company: EVERY company in the sector, one combined query each
+        queried = with_roles = 0
+        with_roles_names: list[str] = []
+        for c in self.companies:
+            q = f'"{c}" (data scientist OR data analyst OR analytics OR machine learning) United Kingdom'
+            data = self._serp(q, start=0)
+            calls += 1
+            queried += 1
+            if data is None:
+                errors += 1
+                continue
+            found = self._extract(data, q, c)
+            if found:
+                with_roles += 1
+                with_roles_names.append(c)
+                jobs.extend(found)
+
         seen, uniq = set(), []
         for j in jobs:
             if not j.url or j.url in seen:
@@ -106,8 +128,12 @@ class BrightDataSerpSource(Source):
             seen.add(j.url)
             uniq.append(j)
         status = "ok" if (uniq or not errors) else "error"
-        return SourceResult(self.name, jobs=uniq[:limit], status=status,
-                            message=f"{len(uniq)} jobs · {len(uniq_plan)} queries · {calls} calls · {errors} errors")
+        meta = {"companies_queried": queried, "companies_with_roles": with_roles,
+                "with_roles_names": with_roles_names[:60]}
+        msg = f"{len(uniq)} jobs · {len(broad_q)} broad + {queried} company queries · {errors} errors"
+        if self._first_error:
+            msg += f" · first_error: {self._first_error[:80]}"
+        return SourceResult(self.name, jobs=uniq[:limit], status=status, message=msg, meta=meta)
 
     def _serp(self, query: str, start: int = 0):
         url = f"https://www.google.com/search?q={quote_plus(query)}&brd_json=1&gl={self.country}&hl=en"
@@ -117,14 +143,18 @@ class BrightDataSerpSource(Source):
             r = requests.post(ENDPOINT,
                               headers={"Authorization": f"Bearer {self.api_key}",
                                        "Content-Type": "application/json"},
-                              json={"zone": self.zone, "url": url, "format": "raw"}, timeout=90)
+                              json={"zone": self.zone, "url": url, "format": "raw"}, timeout=60)
             if r.status_code in (200, 201):
                 try:
                     return r.json()
                 except ValueError:
                     return {}
+            if not self._first_error:
+                self._first_error = f"HTTP {r.status_code}: {r.text[:100]}"
             return None
-        except requests.RequestException:
+        except requests.RequestException as exc:
+            if not self._first_error:
+                self._first_error = str(exc)[:100]
             return None
 
     def _extract(self, data, query: str, company_hint: str) -> list[Job]:
@@ -135,29 +165,28 @@ class BrightDataSerpSource(Source):
             if not isinstance(it, dict):
                 continue
             title, link = _clean(it.get("title", "")), it.get("link", "")
-            if not title or not link or not _JOB_LINK.search(link):
+            if not title or not link or not _is_job(link, title):
                 continue
-            company = company_hint or self._company_from(title)
-            out.append(Job(title=self._clean_title(title), company=company, location="United Kingdom",
-                           url=link, description=_clean(it.get("description", "")),
+            out.append(Job(title=self._clean_title(title), company=company_hint or self._company_from(title),
+                           location="United Kingdom", url=link,
+                           description=_clean(it.get("description", "")),
                            source=self.name, source_query=query).finalize())
         return out
 
     @staticmethod
     def _company_from(title: str) -> str:
-        m = re.match(r"(.+?)\s+hiring\s+", title)                 # LinkedIn: "Company hiring Title in Location"
+        m = re.match(r"(.+?)\s+hiring\s+", title)
         if m:
             return m.group(1).strip()
-        m = re.search(r"\bat\s+([A-Z][\w&.,'\- ]{1,40})", title)   # "Title at Company"
+        m = re.search(r"\bat\s+([A-Z][\w&.,'\- ]{1,40})", title)
         if m:
             return m.group(1).strip(" -|·")
         return ""
 
     @staticmethod
     def _clean_title(title: str) -> str:
-        # strip board suffixes/prefixes so classify + dedup work on the real role
-        t = re.sub(r"\s*[|\-–]\s*(LinkedIn|Reed\.co\.uk|Totaljobs|CV-Library|Indeed|Glassdoor|jobs\.nhs\.uk).*$",
-                   "", title, flags=re.I)
-        t = re.sub(r"^.+?\s+hiring\s+", "", t, flags=re.I)          # drop "Company hiring "
-        t = re.sub(r"\s+in\s+[A-Z][\w ,]+$", "", t)                 # drop trailing " in Location"
+        t = re.sub(r"\s*[|\-–]\s*(LinkedIn|Reed\.co\.uk|Totaljobs|CV-Library|Indeed|Glassdoor|jobs\.nhs\.uk|"
+                   r"Civil Service Jobs).*$", "", title, flags=re.I)
+        t = re.sub(r"^.+?\s+hiring\s+", "", t, flags=re.I)
+        t = re.sub(r"\s+in\s+[A-Z][\w ,]+$", "", t)
         return t.strip() or title

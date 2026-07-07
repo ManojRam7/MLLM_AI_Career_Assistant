@@ -10,6 +10,7 @@ import os
 import sys
 from pathlib import Path
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -54,8 +55,8 @@ def load_jobs(url: str) -> pd.DataFrame:
     blank = pd.Series([""] * n, index=df.index)
     # resilient to schema drift: guarantee every column the UI reads exists
     for _col, _def in (("tracked", False), ("is_custom", False), ("in_bucket", False), ("bucket_tier", ""),
-                       ("category", ""), ("notes", ""), ("source", ""), ("status", "new"), ("url", ""),
-                       ("cv_path", ""), ("fit_reasoning", "")):
+                       ("category", ""), ("sector", ""), ("notes", ""), ("source", ""), ("status", "new"),
+                       ("url", ""), ("cv_path", ""), ("fit_reasoning", "")):
         if _col not in df.columns:
             df[_col] = _def
     df["tracked"] = df["tracked"].fillna(False).astype(bool)
@@ -71,6 +72,16 @@ def load_jobs(url: str) -> pd.DataFrame:
         df["category"] = _cat.where(_cat.str.strip() != "", df["title"].fillna("").map(job_category))
     except Exception:
         pass
+    # backfill sector for rows stored before the sector column (from the Master List)
+    try:
+        from uk_jobops.bucketlist import company_sector, load_company_sectors
+        _smap = load_company_sectors("data/companies_master.csv")
+        _sec = df["sector"].fillna("").astype(str)
+        df["sector"] = _sec.where(_sec.str.strip() != "",
+                                  df["company"].fillna("").map(lambda c: company_sector(c, _smap)))
+    except Exception:
+        pass
+    df["sector"] = df["sector"].fillna("").replace("", "— other —")
     # locations = aggregated towns, falling back to the single location until the
     # next pipeline run populates the aggregate
     agg = (df["locations"] if "locations" in df else blank).fillna("").astype(str)
@@ -119,6 +130,22 @@ with st.sidebar:
         st.rerun()
     st.caption("Data refreshes every 60s, or click Refresh.")
 
+def bar(series, *, scheme="tableau20", horizontal=False, height=300, sort="-y"):
+    """Colour-coded Altair bar chart with the exact value printed on each bar."""
+    df = (series.rename_axis("k").reset_index(name="v") if hasattr(series, "rename_axis")
+          else pd.DataFrame({"k": list(series.keys()), "v": list(series.values())}))
+    df["k"] = df["k"].astype(str)
+    cat, val = alt.X("k:N", sort=sort, title=None, axis=alt.Axis(labelAngle=-30)), alt.Y("v:Q", title=None)
+    enc = dict(y=cat, x=alt.X("v:Q", title=None)) if horizontal else dict(x=cat, y=val)
+    base = alt.Chart(df).encode(**enc)
+    bars = base.mark_bar(cornerRadius=3).encode(
+        color=alt.Color("k:N", legend=None, scale=alt.Scale(scheme=scheme)),
+        tooltip=["k", "v"])
+    txt = base.mark_text(color="white", fontWeight="bold",
+                         **({"align": "left", "dx": 4} if horizontal else {"dy": -7})).encode(text="v:Q")
+    return (bars + txt).properties(height=height).configure_view(strokeWidth=0)
+
+
 def _priority(row) -> str:
     """Colour-coded importance from fit score + scoring status."""
     f = int(row.get("fit_score") or 0)
@@ -148,15 +175,18 @@ def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
     if base.empty:
         st.info("No jobs in this view yet.")
         return
-    f1, f2, f3 = st.columns([2, 1, 3])
+    f1, f2, f3, f4 = st.columns([2, 2, 1, 3])
     srcs = f1.multiselect("Source", sorted(base["source"].dropna().unique()), key=f"{key_prefix}_src")
-    only_bucket = f2.checkbox("⭐ only", key=f"{key_prefix}_bk")
-    q = f3.text_input("Search title / company", key=f"{key_prefix}_q")
+    secs = f2.multiselect("Sector", sorted(base["sector"].dropna().unique()), key=f"{key_prefix}_sec")
+    only_bucket = f3.checkbox("⭐ only", key=f"{key_prefix}_bk")
+    q = f4.text_input("Search title / company", key=f"{key_prefix}_q")
     min_fit = st.slider("Minimum fit score", 0, 100, 0, 5, key=f"{key_prefix}_fit")
 
     view = base
     if srcs:
         view = view[view["source"].isin(srcs)]
+    if secs:
+        view = view[view["sector"].isin(secs)]
     if only_bucket:
         view = view[view["in_bucket"]]
     if q:
@@ -169,7 +199,7 @@ def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
     view["▲"] = view.apply(_priority, axis=1)
     st.caption(f"Showing {len(view)} jobs.  🟢 ≥85 · 🔵 75-84 · 🟡 65-74 · ⚪ <65 · ▫️ unscored · ⭐ target company. "
                "Add jobs you're pursuing from the **Tracker** tab.")
-    cols = ["▲", "new", "title", "company", "category", "locations", "posted", "fetched",
+    cols = ["▲", "new", "title", "company", "category", "sector", "locations", "posted", "fetched",
             "source", "in_bucket", "fit", "url"]
     if category:
         cols.remove("category")
@@ -180,6 +210,7 @@ def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
             "▲": st.column_config.TextColumn("▲", width="small",
                                              help="Priority: 🟢≥85 🔵75+ 🟡65+ ⚪<65 ▫️unscored"),
             "category": st.column_config.TextColumn("category", width="small"),
+            "sector": st.column_config.TextColumn("sector", width="small"),
             "in_bucket": st.column_config.CheckboxColumn("⭐"),
             "new": st.column_config.CheckboxColumn("🆕"),
             "locations": st.column_config.TextColumn("locations", width="medium"),
@@ -189,47 +220,54 @@ def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
             "url": st.column_config.LinkColumn("link", display_text="open")})
 
 
-(tab_overview, tab_jobs, tab_ds, tab_da, tab_source, tab_pipeline, tab_board, tab_cvs) = st.tabs(
-    ["📊 Overview", "💼 Jobs", "🔬 Data Science", "📈 Data Analysis", "🗂️ By Source",
-     "⚙️ Runs & LLMs", "📋 Tracker", "📝 Recommendations"])
+(tab_overview, tab_jobs, tab_source, tab_pipeline, tab_board, tab_cvs) = st.tabs(
+    ["📊 Overview", "💼 Jobs", "🗂️ By Source", "⚙️ Runs & LLMs", "📋 Tracker", "📝 Recommendations"])
 
 # ---------------------------------------------------------------- OVERVIEW
 with tab_overview:
     if jobs.empty:
         st.info("No jobs yet. Run `python scripts/run_pipeline.py --mode first`, then refresh.")
     else:
-        sc = {s: int((jobs["status"] == s).sum()) for s in STATUSES}
+        ov = jobs[~jobs["is_custom"]]        # manual jobs live only in the Tracker
+        sc = {s: int((ov["status"] == s).sum()) for s in STATUSES}
         c = st.columns(5)
-        c[0].metric("Total", len(jobs))
-        c[1].metric("⭐ Bucket-list", int(jobs["in_bucket"].sum()))
+        c[0].metric("Total", len(ov))
+        c[1].metric("⭐ Bucket-list", int(ov["in_bucket"].sum()))
         c[2].metric("Shortlisted", sc["shortlisted"])
         c[3].metric("Tailored", sc["tailored"])
         c[4].metric("Applied", sc["applied"] + sc["interview"] + sc["offer"])
-        _ds = int((jobs["category"] == "data-science").sum())
-        _da = int((jobs["category"] == "data-analysis").sum())
+        _ds = int((ov["category"] == "data-science").sum())
+        _da = int((ov["category"] == "data-analysis").sum())
         st.caption(f"🔬 Data Science: **{_ds}**  ·  📈 Data Analysis: **{_da}**  ·  "
-                   f"🟢 strong (≥85): **{int((jobs['fit_score'] >= 85).sum())}**")
+                   f"🟢 strong (≥85): **{int((ov['fit_score'] >= 85).sum())}**")
 
         left, right = st.columns(2)
         with left:
             st.subheader("By status")
-            st.bar_chart(jobs["status"].value_counts())
+            st.altair_chart(bar(ov["status"].value_counts(), scheme="tableau10"), use_container_width=True)
         with right:
             st.subheader("By source")
-            st.bar_chart(jobs["source"].value_counts())
+            st.altair_chart(bar(ov["source"].value_counts(), scheme="set2"), use_container_width=True)
 
-        st.subheader("Fit-score distribution")
-        scored = jobs[jobs["fit_score"] > 0]
-        if scored.empty:
-            st.caption("No fit scores yet (LLM scoring runs each pipeline pass).")
-        else:
-            bins = pd.cut(scored["fit_score"], [0, 50, 60, 70, 80, 90, 100],
-                          labels=["<50", "50-59", "60-69", "70-79", "80-89", "90+"])
-            st.bar_chart(bins.value_counts().sort_index())
+        left2, right2 = st.columns(2)
+        with left2:
+            st.subheader("By sector")
+            st.altair_chart(bar(ov["sector"].value_counts(), scheme="category20b", horizontal=True, height=320,
+                                sort="-x"), use_container_width=True)
+        with right2:
+            st.subheader("Fit-score distribution")
+            scored = ov[ov["fit_score"] > 0]
+            if scored.empty:
+                st.caption("No fit scores yet (LLM scoring runs each pipeline pass).")
+            else:
+                bins = pd.cut(scored["fit_score"], [0, 50, 65, 75, 85, 100],
+                              labels=["<50", "50-64", "65-74", "75-84", "85+"])
+                st.altair_chart(bar(bins.value_counts().sort_index(), scheme="redyellowgreen", sort=None),
+                                use_container_width=True)
 
         st.subheader("Top matches")
-        top_cols = ["new", "title", "company", "locations", "fit", "in_bucket", "status", "posted", "fetched", "url"]
-        top = jobs[jobs["fit_score"] >= 70].head(15)
+        top_cols = ["new", "title", "company", "sector", "locations", "fit", "in_bucket", "status", "posted", "fetched", "url"]
+        top = ov[ov["fit_score"] >= 70].head(15)
         top = top[[c for c in top_cols if c in top.columns]]
         st.dataframe(top, hide_index=True, width="stretch",
                      column_config={"url": st.column_config.LinkColumn("link", display_text="open"),
@@ -311,7 +349,8 @@ with tab_pipeline:
                 "Reed": sc.get("Reed", 0), "Adzuna": sc.get("Adzuna", 0), "Google": google,
                 "ATS": ats, "Gov": gov,
                 "🧭 DS": sj.get("category_data_science", 0), "DA": sj.get("category_data_analysis", 0),
-                "🎯 companies": sj.get("companies_searched", 0), "⭐ bucket": sj.get("bucket_matches", 0),
+                "🔎 searched": sj.get("companies_searched", 0), "of": sj.get("companies_in_sector", ""),
+                "co. w/roles": sj.get("companies_with_roles", 0), "⭐ bucket": sj.get("bucket_matches", 0),
                 "scored": r.get("scored"), "tailored": r.get("tailored"),
                 "src status": " · ".join(f"{s.get('source','?').split(' (')[0]}:{s.get('status','?')}"
                                          + (f"({s.get('count',0)})" if s.get('status') != 'ok' or not s.get('count') else "")
@@ -319,24 +358,40 @@ with tab_pipeline:
                 "note": r.get("llm_note") or (sj.get("telegram", "") or ""),
             })
         st.dataframe(pd.DataFrame(disp), hide_index=True, width="stretch", height=430)
+        # sector coverage detail — find the most recent SECTOR run
+        _sector_run = next((_sj(r) for _, r in runs.iterrows()
+                            if _sj(r).get("companies_in_sector")), None)
+        if _sector_run:
+            _t = _sector_run.get("companies_in_sector", 0) or 0
+            _srch = _sector_run.get("companies_searched", 0) or 0
+            with st.container(border=True):
+                st.markdown(f"**🔎 Sector coverage — {_sector_run.get('sector', '?')}** (most recent sector run)")
+                cc = st.columns(4)
+                cc[0].metric("Companies searched", f"{_srch}/{_t}")
+                cc[1].metric("With matching roles", _sector_run.get("companies_with_roles", 0))
+                cc[2].metric("Not reached", _sector_run.get("companies_missed", 0))
+                cc[3].metric("Roles found", _sector_run.get("targets", 0))
+                _names = _sector_run.get("companies_with_roles_names") or []
+                if _names:
+                    st.caption("Companies with roles this run: " + ", ".join(_names))
         latest = _sj(runs.iloc[0])
         if latest:
             with st.expander("🔎 Latest run — full detail (every field)"):
                 st.json(latest)
         st.line_chart(runs.set_index("run_at")[["discovered", "scored", "tailored"]].iloc[::-1])
 
-# ----------------------------------------------------------------- JOBS / DS / DA
+# ----------------------------------------------------------------- JOBS (All / DS / DA sub-tabs)
 with tab_jobs:
-    render_jobs(jobs, url, "jobs", None, "💼 All jobs",
-                "Every job fetched from all sources, both categories. Add ones you're pursuing from the Tracker tab.")
-
-with tab_ds:
-    render_jobs(jobs, url, "ds", "data-science", "🔬 Data Science roles",
-                "Data Scientist, ML / AI Engineer, Applied / Decision Scientist and similar.")
-
-with tab_da:
-    render_jobs(jobs, url, "da", "data-analysis", "📈 Data Analysis roles",
-                "Data Analyst, Analytics Engineer, BI / Insight / MI Analyst and similar (incl. civil service).")
+    _sa, _sds, _sda = st.tabs(["All jobs", "🔬 Data Science", "📈 Data Analysis"])
+    with _sa:
+        render_jobs(jobs, url, "jall", None, "💼 All jobs",
+                    "Every job fetched from all sources, both categories. Filter by sector or source below.")
+    with _sds:
+        render_jobs(jobs, url, "jds", "data-science", "🔬 Data Science roles",
+                    "Data Scientist, ML / AI Engineer, Applied / Decision Scientist and similar.")
+    with _sda:
+        render_jobs(jobs, url, "jda", "data-analysis", "📈 Data Analysis roles",
+                    "Data Analyst, Analytics Engineer, BI / Insight / MI Analyst and similar (incl. civil service).")
 
 # ----------------------------------------------------------------- BY SOURCE
 with tab_source:

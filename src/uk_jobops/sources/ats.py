@@ -28,6 +28,7 @@ def detect_ats(url: str) -> tuple[str, str] | None:
         (r"apply\.workable\.com/([A-Za-z0-9_-]+)", "workable"),
         (r"://([A-Za-z0-9_-]+)\.recruitee\.com", "recruitee"),
         (r"://([A-Za-z0-9_-]+)\.eightfold\.ai", "eightfold"),
+        (r"://([A-Za-z0-9_-]+)\.jobs\.personio\.(?:com|de)", "personio"),
     ]:
         m = re.search(pat, u, re.I)
         if m:
@@ -159,6 +160,16 @@ class ATSSource(Source):
                                location=it.get("location", "") or "United Kingdom",
                                url=it.get("canonicalPositionUrl") or it.get("positionUrl") or "",
                                description=it.get("job_description", "") or "", source=self.name).finalize())
+        elif ats == "personio":
+            import xml.etree.ElementTree as ET
+            r = requests.get(f"https://{token}.jobs.personio.com/xml", timeout=30, headers=_UA)
+            r.raise_for_status()
+            for pos in ET.fromstring(r.content).iter("position"):
+                pid = pos.findtext("id") or ""
+                out.append(Job(title=pos.findtext("name") or "", company=company,
+                               location=pos.findtext("office") or "United Kingdom",
+                               url=f"https://{token}.jobs.personio.com/job/{pid}" if pid else "",
+                               description="", source=self.name).finalize())
         elif ats == "workday":
             tenant, dc, site = token.split("|")
             api = f"https://{tenant}.{dc}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs"
