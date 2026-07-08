@@ -162,10 +162,12 @@ class Store:
             cur.execute("UPDATE jobs SET notified=TRUE WHERE dedupe_key = ANY(%s)", (list(keys),))
 
     def jobs_to_notify(self, min_fit: int = 75, limit: int = 10) -> list[dict[str, Any]]:
+        # NEWEST first so alerts are about fresh discoveries you can act on fast.
         return self._rows(
-            "SELECT dedupe_key,title,company,location,locations,fit_score,fit_reasoning,url,in_bucket,bucket_tier,category "
+            "SELECT dedupe_key,title,company,location,locations,fit_score,fit_reasoning,url,in_bucket,"
+            "bucket_tier,category,sector,first_seen_at,posted_date "
             "FROM jobs WHERE notified=FALSE AND is_target=TRUE AND fit_score >= %s "
-            "ORDER BY (bucket_tier='top100') DESC, fit_score DESC LIMIT %s", (min_fit, limit))
+            "ORDER BY first_seen_at DESC, fit_score DESC LIMIT %s", (min_fit, limit))
 
     def set_status(self, dedupe_key: str, status: str, notes: str | None = None) -> None:
         fields: dict[str, Any] = {"status": status}

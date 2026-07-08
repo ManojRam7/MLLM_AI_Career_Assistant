@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import html
 import re
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 import requests
 
@@ -22,31 +22,55 @@ from .base import Source, SourceResult
 ENDPOINT = "https://api.brightdata.com/request"
 _TAG = re.compile(r"<[^>]+>")
 
-# ACCEPT: URL looks like one specific posting
+# ACCEPT: URL looks like ONE specific posting. Broad enough to catch a company's OWN careers
+# site (Goldman higher.gs.com/roles/ID, Barclays search.jobs/job/ID, Workday .../job/...) - not
+# just the big boards - because manual verification showed many target-company jobs live there.
 _INDIVIDUAL = re.compile(
     r"(jobs\.nhs\.uk/candidate/jobadvert/|"
     r"linkedin\.com/jobs/view/|"
-    r"reed\.co\.uk/jobs/[^/]+/\d|"
-    r"totaljobs\.com/job/\d|"
-    r"cv-library\.co\.uk/job/\d|"
-    r"glassdoor\.[a-z.]+/job-listing/|"
-    r"indeed\.[a-z.]+/(viewjob|rc/clk)|"
-    r"civilservicejobs\.service\.gov\.uk/csr/[^\"']*jcode=|"
-    r"alooba\.com/[a-z]{2}/job/|"
+    r"/jobs?/view/|"
+    r"/(job|jobs|role|roles|vacancy|vacancies|opening|openings|position|posting|advert|listing)/[^?#]*\d|"
+    r"jcode=|gh_jid=|/jobadvert/|[?&]jobid=|[?&]jobId=|"
     r"greenhouse\.io/[^/]+/jobs/\d|"
-    r"lever\.co/[^/]+/[0-9a-f]{8}|"
-    r"ashbyhq\.com/[^/]+/[0-9a-f]{8}|"
+    r"lever\.co/[^/]+/[0-9a-f-]{8}|"
+    r"ashbyhq\.com/[^/]+/[0-9a-f-]{8}|"
+    r"myworkdayjobs\.com/.+/[A-Za-z0-9_-]*_?R?-?\d{3,}|"
+    r"smartrecruiters\.com/[^/]+/\d|"
     r"workable\.com/[a-z]+/[A-F0-9]{6}|"
-    r"smartrecruiters\.com/[^/]+/\d)", re.I)
-# REJECT: URL is a search/listing page
+    r"alooba\.com/[a-z]{2}/job/|"
+    r"higher\.gs\.com/roles/\d|"
+    r"reed\.co\.uk/jobs/[^/]+/\d|totaljobs\.com/job/\d|cv-library\.co\.uk/job/\d|"
+    r"glassdoor\.[a-z.]+/job-listing/|indeed\.[a-z.]+/(viewjob|rc/clk))", re.I)
+# REJECT: URL is a search/listing/category page
 _LISTING = re.compile(
-    r"(SRCH_|/jobs/[a-z0-9-]*-jobs(\b|/|\?|$)|/jobs(\?|$)|/jobs-in-|glassdoor\.[a-z.]+/Job/|/browse|/search)", re.I)
+    r"(SRCH_|[a-z0-9-]+-jobs(\b|/|\?|$)|/jobs(\?|$)|/jobs-in-|/jobs/search|glassdoor\.[a-z.]+/Job/|"
+    r"/browse[/?]|/search[/?]|/results[/?]|/category/|/all-jobs)", re.I)
 # REJECT: title is a listing ("1043 data scientist jobs", "Data Analyst Jobs", "... jobs in London")
 _LISTING_TITLE = re.compile(r"(^\s*[\d,]+\s+.*\bjobs\b|\bjobs\b\s*$|\bjobs?\s+in\b)", re.I)
 
 
 def _clean(s: str) -> str:
     return " ".join(html.unescape(_TAG.sub(" ", s or "")).split())
+
+
+_ATS_HOSTS = ("boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.lever.co",
+              "jobs.ashbyhq.com", "apply.workable.com", "careers.smartrecruiters.com")
+
+
+def _site_of(careers_url: str) -> str:
+    """Turn a company's careers_url into a Google `site:` value so we search THAT company's own
+    careers site (e.g. higher.gs.com, boards.greenhouse.io/monzo, tesco.wd3.myworkdayjobs.com)."""
+    try:
+        p = urlparse(careers_url if "://" in careers_url else "https://" + careers_url)
+        host = p.netloc.replace("www.", "").strip()
+        if not host or "google." in host or "civilservicejobs" in host or "jobs.nhs.uk" in host:
+            return ""                      # gov handled separately; skip generic aggregators
+        seg = [s for s in p.path.split("/") if s]
+        if host in _ATS_HOSTS and seg:     # ATS boards need the org path (…greenhouse.io/monzo)
+            return f"{host}/{seg[0]}"
+        return host
+    except Exception:
+        return ""
 
 
 def _is_job(url: str, title: str) -> bool:
@@ -104,21 +128,26 @@ class BrightDataSerpSource(Source):
                     break
                 jobs.extend(found)
 
-        # 2) per-company: EVERY company in the sector, one combined query each
+        # 2) per-company: EVERY company in the sector. Prefer the company's OWN careers site
+        #    (site:) so we find their real openings; fall back to a name query.
         queried = with_roles = 0
         with_roles_names: list[str] = []
-        for c in self.companies:
-            q = f'"{c}" (data scientist OR data analyst OR analytics OR machine learning) United Kingdom'
+        cats = "(data scientist OR data analyst OR analytics OR machine learning OR data engineer)"
+        for entry in self.companies:
+            name, curl = entry if isinstance(entry, (tuple, list)) else (entry, "")
+            site = _site_of(curl)
+            q = (f"site:{site} {cats}" if site
+                 else f'"{name}" {cats} United Kingdom')
             data = self._serp(q, start=0)
             calls += 1
             queried += 1
             if data is None:
                 errors += 1
                 continue
-            found = self._extract(data, q, c)
+            found = self._extract(data, q, name)
             if found:
                 with_roles += 1
-                with_roles_names.append(c)
+                with_roles_names.append(name)
                 jobs.extend(found)
 
         seen, uniq = set(), []

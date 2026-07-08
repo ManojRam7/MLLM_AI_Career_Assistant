@@ -7,6 +7,7 @@ Deploy free:   Streamlit Community Cloud, with SUPABASE_DB_URL in app secrets.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -124,7 +125,10 @@ except Exception as exc:  # noqa: BLE001
 
 with st.sidebar:
     st.header("Job Search Assistant")
-    st.metric("Jobs in database", len(jobs))
+    _n_fetched = int((~jobs["is_custom"]).sum()) if not jobs.empty and "is_custom" in jobs else len(jobs)
+    _n_manual = len(jobs) - _n_fetched
+    st.metric("Jobs in database", _n_fetched,
+              help=f"{_n_manual} manually-added job(s) live only in the Tracker" if _n_manual else None)
     if st.button("🔄 Refresh data", width="stretch"):
         st.cache_data.clear()
         st.rerun()
@@ -220,6 +224,57 @@ def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
             "url": st.column_config.LinkColumn("link", display_text="open")})
 
 
+def render_kanban(tracked, url, kp):
+    """One kanban board for a set of tracked jobs. `kp` scopes widget keys so the All / DS / DA
+    boards don't collide (a job can appear in All and its category board)."""
+    if tracked.empty:
+        st.info("No tracked jobs in this view.")
+        return
+    STAGES = [("📌 To apply", "#4f8cff", "shortlisted"), ("✅ Applied", "#5ad19b", "applied"),
+              ("📝 Assessment", "#ffce6b", "assessment"), ("✔️ Cleared", "#8ee06b", "assessment_cleared"),
+              ("🎤 Interview", "#c792ea", "interview"), ("🏆 Offer", "#ffd54a", "offer"),
+              ("❌ Rejected", "#ff6b6b", "rejected")]
+    STAGE_VALUES = [s for _, _, s in STAGES]
+    APP = STAGE_VALUES[1:]
+    moves: dict[str, str] = {}
+    deletes: list[str] = []
+    bcols = st.columns(len(STAGES))
+    for bcol, (label, color, sval) in zip(bcols, STAGES):
+        items = (tracked[~tracked["status"].isin(APP)] if sval == "shortlisted"
+                 else tracked[tracked["status"] == sval]).sort_values("fit_score", ascending=False)
+        bcol.markdown(f"<div style='background:{color};color:#0e1117;padding:6px 4px;border-radius:8px;"
+                      f"font-weight:700;text-align:center;font-size:12px'>{label}<br>{len(items)}</div>",
+                      unsafe_allow_html=True)
+        for _, r in items.iterrows():
+            with bcol.container(border=True):
+                star = "⭐ " if r.get("in_bucket") else ""
+                fit = int(r.get("fit_score") or 0)
+                ttl = re.sub(r"[*_`\[\]<>]", "", str(r["title"]))[:60]
+                co = re.sub(r"[*_`\[\]<>]", "", str(r["company"]))[:40]
+                st.markdown(f"{star}**{ttl}**")
+                st.caption(co + (f" · fit {fit}" if fit else ""))
+                if r.get("url"):
+                    st.markdown(f"[open job]({r['url']})")
+                mv = st.selectbox("stage", STAGE_VALUES, index=STAGE_VALUES.index(sval),
+                                  key=f"mv_{kp}_{r['dedupe_key']}", label_visibility="collapsed")
+                if mv != sval:
+                    moves[r["dedupe_key"]] = mv
+                if st.checkbox("🗑 delete", key=f"del_{kp}_{r['dedupe_key']}"):
+                    deletes.append(r["dedupe_key"])
+    if st.button("💾 Save board", type="primary", key=f"save_{kp}"):
+        store = get_store(url)
+        n = 0
+        for k, s in moves.items():
+            if k not in deletes:
+                store.set_status(k, s)
+                n += 1
+        if deletes:
+            store.delete_jobs(deletes)
+        st.cache_data.clear()
+        st.success(f"Moved {n} · deleted {len(deletes)}.")
+        st.rerun()
+
+
 (tab_overview, tab_jobs, tab_source, tab_pipeline, tab_board, tab_cvs) = st.tabs(
     ["📊 Overview", "💼 Jobs", "🗂️ By Source", "⚙️ Runs & LLMs", "📋 Tracker", "📝 Recommendations"])
 
@@ -249,21 +304,21 @@ with tab_overview:
             st.subheader("By source")
             st.altair_chart(bar(ov["source"].value_counts(), scheme="set2"), use_container_width=True)
 
-        left2, right2 = st.columns(2)
-        with left2:
-            st.subheader("By sector")
-            st.altair_chart(bar(ov["sector"].value_counts(), scheme="category20b", horizontal=True, height=320,
-                                sort="-x"), use_container_width=True)
-        with right2:
-            st.subheader("Fit-score distribution")
-            scored = ov[ov["fit_score"] > 0]
-            if scored.empty:
-                st.caption("No fit scores yet (LLM scoring runs each pipeline pass).")
-            else:
-                bins = pd.cut(scored["fit_score"], [0, 50, 65, 75, 85, 100],
-                              labels=["<50", "50-64", "65-74", "75-84", "85+"])
-                st.altair_chart(bar(bins.value_counts().sort_index(), scheme="redyellowgreen", sort=None),
-                                use_container_width=True)
+        st.subheader("By sector")
+        st.caption("How many fetched jobs map to each of your 7 Master-List sectors "
+                   "('— other —' = employers not on the Master List, e.g. broad Adzuna/Reed hits).")
+        st.altair_chart(bar(ov["sector"].value_counts(), scheme="tableau20", horizontal=False, height=360,
+                            sort="-y"), use_container_width=True)
+
+        st.subheader("Fit-score distribution")
+        scored = ov[ov["fit_score"] > 0]
+        if scored.empty:
+            st.caption("No fit scores yet (LLM scoring runs each pipeline pass).")
+        else:
+            bins = pd.cut(scored["fit_score"], [0, 50, 65, 75, 85, 100],
+                          labels=["<50", "50-64", "65-74", "75-84", "85+"])
+            st.altair_chart(bar(bins.value_counts().sort_index(), scheme="redyellowgreen", sort=None),
+                            use_container_width=True)
 
         st.subheader("Top matches")
         top_cols = ["new", "title", "company", "sector", "locations", "fit", "in_bucket", "status", "posted", "fetched", "url"]
@@ -358,22 +413,25 @@ with tab_pipeline:
                 "note": r.get("llm_note") or (sj.get("telegram", "") or ""),
             })
         st.dataframe(pd.DataFrame(disp), hide_index=True, width="stretch", height=430)
-        # sector coverage detail — find the most recent SECTOR run
-        _sector_run = next((_sj(r) for _, r in runs.iterrows()
-                            if _sj(r).get("companies_in_sector")), None)
-        if _sector_run:
-            _t = _sector_run.get("companies_in_sector", 0) or 0
-            _srch = _sector_run.get("companies_searched", 0) or 0
+        # sector coverage — pick ANY sector run (any day) to see its full coverage
+        _sector_runs = [(_local(r.get("run_at")), _sj(r)) for _, r in runs.iterrows()
+                        if _sj(r).get("companies_in_sector")]
+        if _sector_runs:
+            st.markdown("**🔎 Sector coverage** — every-company search results, per run")
+            _labels = [f"{t}  ·  {sj.get('sector', '?')}  ({sj.get('companies_searched', 0)}"
+                       f"/{sj.get('companies_in_sector', '?')} searched)" for t, sj in _sector_runs]
+            _pick = st.selectbox("Pick a run", _labels, key="cov_pick", label_visibility="collapsed")
+            _sr = {lab: sj for lab, (_, sj) in zip(_labels, _sector_runs)}[_pick]
             with st.container(border=True):
-                st.markdown(f"**🔎 Sector coverage — {_sector_run.get('sector', '?')}** (most recent sector run)")
                 cc = st.columns(4)
-                cc[0].metric("Companies searched", f"{_srch}/{_t}")
-                cc[1].metric("With matching roles", _sector_run.get("companies_with_roles", 0))
-                cc[2].metric("Not reached", _sector_run.get("companies_missed", 0))
-                cc[3].metric("Roles found", _sector_run.get("targets", 0))
-                _names = _sector_run.get("companies_with_roles_names") or []
+                cc[0].metric("Companies searched",
+                             f"{_sr.get('companies_searched', 0)}/{_sr.get('companies_in_sector', 0)}")
+                cc[1].metric("With matching roles", _sr.get("companies_with_roles", 0))
+                cc[2].metric("Not reached", _sr.get("companies_missed", 0))
+                cc[3].metric("Roles found (kept)", _sr.get("targets", 0))
+                _names = _sr.get("companies_with_roles_names") or []
                 if _names:
-                    st.caption("Companies with roles this run: " + ", ".join(_names))
+                    st.caption(f"✅ Companies with roles ({len(_names)}): " + ", ".join(_names))
         latest = _sj(runs.iloc[0])
         if latest:
             with st.expander("🔎 Latest run — full detail (every field)"):
@@ -452,53 +510,18 @@ with tab_board:
     if tracked.empty:
         st.info("No jobs in your tracker yet — add some above (manually or from the Jobs tab).")
     else:
-        STAGES = [("📌 To apply", "#4f8cff", "shortlisted"),
-                  ("✅ Applied", "#5ad19b", "applied"),
-                  ("📝 Assessment", "#ffce6b", "assessment"),
-                  ("✔️ Cleared", "#8ee06b", "assessment_cleared"),
-                  ("🎤 Interview", "#c792ea", "interview"),
-                  ("🏆 Offer", "#ffd54a", "offer"),
-                  ("❌ Rejected", "#ff6b6b", "rejected")]
-        STAGE_VALUES = [s for _, _, s in STAGES]
-        APP = STAGE_VALUES[1:]     # everything past "To apply"
-        moves: dict[str, str] = {}
-        deletes: list[str] = []
-        bcols = st.columns(len(STAGES))
-        for bcol, (label, color, sval) in zip(bcols, STAGES):
-            items = (tracked[~tracked["status"].isin(APP)] if sval == "shortlisted"
-                     else tracked[tracked["status"] == sval]).sort_values("fit_score", ascending=False)
-            bcol.markdown(
-                f"<div style='background:{color};color:#0e1117;padding:6px 4px;border-radius:8px;"
-                f"font-weight:700;text-align:center;font-size:12px'>{label}<br>{len(items)}</div>",
-                unsafe_allow_html=True)
-            for _, r in items.iterrows():
-                with bcol.container(border=True):
-                    star = "⭐ " if r.get("in_bucket") else ""
-                    fit = int(r.get("fit_score") or 0)
-                    link = f" · [open]({r['url']})" if r.get("url") else ""
-                    st.markdown(
-                        f"{star}**{str(r['title'])[:32]}**  \n"
-                        f"<span style='color:#8b93a7;font-size:11px'>{str(r['company'])[:22]}"
-                        f"{' · fit ' + str(fit) if fit else ''}</span>{link}", unsafe_allow_html=True)
-                    mv = st.selectbox("stage", STAGE_VALUES, index=STAGE_VALUES.index(sval),
-                                      key=f"mv_{r['dedupe_key']}", label_visibility="collapsed")
-                    if mv != sval:
-                        moves[r["dedupe_key"]] = mv
-                    if st.checkbox("🗑", key=f"del_{r['dedupe_key']}"):
-                        deletes.append(r["dedupe_key"])
-        st.divider()
-        if st.button("💾 Save board", type="primary"):
-            store = get_store(url)
-            n_moved = 0
-            for k, s in moves.items():
-                if k not in deletes:
-                    store.set_status(k, s)
-                    n_moved += 1
-            if deletes:
-                store.delete_jobs(deletes)
-            st.cache_data.clear()
-            st.success(f"Moved {n_moved} · deleted {len(deletes)}.")
-            st.rerun()
+        st.caption("Separate boards for close monitoring. Change a card's stage, tick **🗑 delete**, "
+                   "then **Save board** on that board.")
+        _kall, _kds, _kda = st.tabs(
+            [f"🗂 All ({len(tracked)})",
+             f"🔬 Data Science ({int((tracked['category'] == 'data-science').sum())})",
+             f"📈 Data Analysis ({int((tracked['category'] == 'data-analysis').sum())})"])
+        with _kall:
+            render_kanban(tracked, url, "all")
+        with _kds:
+            render_kanban(tracked[tracked["category"] == "data-science"], url, "ds")
+        with _kda:
+            render_kanban(tracked[tracked["category"] == "data-analysis"], url, "da")
 
 # --------------------------------------------------------------- RECOMMENDATIONS
 with tab_cvs:

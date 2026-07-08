@@ -40,11 +40,15 @@ def _message(r: dict, name: str) -> str:
         tag = ""
     reason = _e((r.get("fit_reasoning") or "").split(". ")[0]).rstrip(".")
     loc = _e(r.get("locations") or r.get("location") or "")
+    when = str(r.get("posted_date") or r.get("first_seen_at") or "")[:10]
+    sector = _e(r.get("sector") or "")
     parts = [f"{emoji} <b>{_e(level)}, {_e(name)}!</b>",
              f"<b>{_e(r.get('title'))}</b> — {_e(r.get('company'))}",
              f"📊 Fit <b>{fit}/100</b>{tag}"]
-    if loc:
-        parts.append(f"📍 {loc}")
+    meta = " · ".join(x for x in [f"📍 {loc}" if loc else "", f"🗓 {when}" if when else "",
+                                  f"🏷 {sector}" if sector else ""] if x)
+    if meta:
+        parts.append(meta)
     if reason:
         parts.append(f"✅ {reason}.")
     if r.get("url"):

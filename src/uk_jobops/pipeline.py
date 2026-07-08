@@ -43,9 +43,9 @@ class Pipeline:
         if bd.get("enabled") and sec.brightdata_api_key:
             from .bucketlist import companies_in_sector
             from .sources.brightdata_serp import BrightDataSerpSource
-            # sector run => search EVERY company in that sector; broad run => market queries only.
-            companies = ([c for c, _ in companies_in_sector(self.cfg.path(bucket_path), sector)]
-                         if sector else [])
+            # sector run => search EVERY company in that sector (name + careers_url so we can
+            # site:-search each company's own careers page); broad run => market queries only.
+            companies = (companies_in_sector(self.cfg.path(bucket_path), sector) if sector else [])
             out.append(BrightDataSerpSource(
                 sec.brightdata_api_key, sec.brightdata_serp_zone,
                 sector=sector, run_broad=run_broad,
