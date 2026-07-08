@@ -440,16 +440,17 @@ with tab_pipeline:
 
 # ----------------------------------------------------------------- JOBS (All / DS / DA sub-tabs)
 with tab_jobs:
-    _sa, _sds, _sda = st.tabs(["All jobs", "🔬 Data Science", "📈 Data Analysis"])
-    with _sa:
-        render_jobs(jobs, url, "jall", None, "💼 All jobs",
-                    "Every job fetched from all sources, both categories. Filter by sector or source below.")
-    with _sds:
+    _view = st.radio("View", ["💼 All jobs", "🔬 Data Science", "📈 Data Analysis"],
+                     horizontal=True, key="jobs_view", label_visibility="collapsed")
+    if _view.startswith("🔬"):
         render_jobs(jobs, url, "jds", "data-science", "🔬 Data Science roles",
                     "Data Scientist, ML / AI Engineer, Applied / Decision Scientist and similar.")
-    with _sda:
+    elif _view.startswith("📈"):
         render_jobs(jobs, url, "jda", "data-analysis", "📈 Data Analysis roles",
                     "Data Analyst, Analytics Engineer, BI / Insight / MI Analyst and similar (incl. civil service).")
+    else:
+        render_jobs(jobs, url, "jall", None, "💼 All jobs",
+                    "Every job fetched from all sources, both categories. Filter by sector or source below.")
 
 # ----------------------------------------------------------------- BY SOURCE
 with tab_source:
@@ -511,17 +512,18 @@ with tab_board:
         st.info("No jobs in your tracker yet — add some above (manually or from the Jobs tab).")
     else:
         st.caption("Separate boards for close monitoring. Change a card's stage, tick **🗑 delete**, "
-                   "then **Save board** on that board.")
-        _kall, _kds, _kda = st.tabs(
-            [f"🗂 All ({len(tracked)})",
-             f"🔬 Data Science ({int((tracked['category'] == 'data-science').sum())})",
-             f"📈 Data Analysis ({int((tracked['category'] == 'data-analysis').sum())})"])
-        with _kall:
-            render_kanban(tracked, url, "all")
-        with _kds:
+                   "then **Save board**.")
+        _nds = int((tracked["category"] == "data-science").sum())
+        _nda = int((tracked["category"] == "data-analysis").sum())
+        _board = st.radio("Board", [f"🗂 All ({len(tracked)})", f"🔬 Data Science ({_nds})",
+                                    f"📈 Data Analysis ({_nda})"],
+                          horizontal=True, key="board_view", label_visibility="collapsed")
+        if _board.startswith("🔬"):
             render_kanban(tracked[tracked["category"] == "data-science"], url, "ds")
-        with _kda:
+        elif _board.startswith("📈"):
             render_kanban(tracked[tracked["category"] == "data-analysis"], url, "da")
+        else:
+            render_kanban(tracked, url, "all")
 
 # --------------------------------------------------------------- RECOMMENDATIONS
 with tab_cvs:

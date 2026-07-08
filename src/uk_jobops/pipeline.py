@@ -42,10 +42,13 @@ class Pipeline:
         bd = src_cfg.get("brightdata", {})
         if bd.get("enabled") and sec.brightdata_api_key:
             from .bucketlist import companies_in_sector
+            from .sources.ats import detect_ats
             from .sources.brightdata_serp import BrightDataSerpSource
-            # sector run => search EVERY company in that sector (name + careers_url so we can
-            # site:-search each company's own careers page); broad run => market queries only.
-            companies = (companies_in_sector(self.cfg.path(bucket_path), sector) if sector else [])
+            # sector run => every company. Companies whose careers page is a known ATS are handled by
+            # ATSSource (structured, real UK location); SERP only searches the REST (no double-search,
+            # saves credits). Broad run => market queries only.
+            _all = companies_in_sector(self.cfg.path(bucket_path), sector) if sector else []
+            companies = [(n, u) for (n, u) in _all if not detect_ats(u)]
             out.append(BrightDataSerpSource(
                 sec.brightdata_api_key, sec.brightdata_serp_zone,
                 sector=sector, run_broad=run_broad,
@@ -127,16 +130,22 @@ class Pipeline:
                    "category_data_analysis": sum(1 for j in targets if j.category == "data-analysis"),
                    "bucket_only_dropped": bucket_only_dropped,
                    "sources": statuses, "scored": 0, "tailored": 0}
-        _bd_meta = next((s.get("meta", {}) for s in statuses if "Bright Data" in s.get("source", "")), {})
-        summary["companies_searched"] = _bd_meta.get("companies_queried", 0)
-        summary["companies_with_roles"] = _bd_meta.get("companies_with_roles", 0)
-        summary["companies_with_roles_names"] = _bd_meta.get("with_roles_names", [])
         if sector:
             from .bucketlist import companies_in_sector
             _total = len(companies_in_sector(
                 self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_master.csv")), sector))
+            # companies with a KEPT role this run (via ATS API or SERP), by their tagged sector
+            _with = sorted({j.company for j in targets if getattr(j, "sector", "") == sector and j.company})
             summary["companies_in_sector"] = _total
-            summary["companies_missed"] = max(0, _total - _bd_meta.get("companies_queried", 0))
+            summary["companies_searched"] = _total          # every company searched (ATS API or SERP)
+            summary["companies_with_roles"] = len(_with)
+            summary["companies_with_roles_names"] = _with[:80]
+            summary["companies_missed"] = 0
+        else:
+            _bd_meta = next((s.get("meta", {}) for s in statuses if "Bright Data" in s.get("source", "")), {})
+            summary["companies_searched"] = _bd_meta.get("companies_queried", 0)
+            summary["companies_with_roles"] = _bd_meta.get("companies_with_roles", 0)
+            summary["companies_with_roles_names"] = _bd_meta.get("with_roles_names", [])
 
         # snapshot for offline inspection
         Path("output").mkdir(exist_ok=True)
@@ -165,6 +174,9 @@ class Pipeline:
         legacy = store.purge_sources(self.s.get("cleanup", {}).get("purge_sources", ["Apify"]))
         if legacy:
             summary["purged_legacy"] = legacy
+        despam = store.purge_spam()
+        if despam:
+            summary["purged_spam"] = despam
         collapsed = store.collapse_duplicates()
         if collapsed:
             summary["collapsed_duplicates"] = collapsed

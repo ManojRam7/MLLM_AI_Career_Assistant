@@ -73,6 +73,72 @@ def _site_of(careers_url: str) -> str:
         return ""
 
 
+# --- deterministic quality gates (run in code, BEFORE the LLM, so junk wastes no tokens) ---
+_STALE_HOST = re.compile(
+    r"(builtin(london)?\.|builtinnyc|builtin\.com|bebee|expertini|welcometothejungle|welcome to the jungle|"
+    r"app\.welcometothejungle|otta\.|datasciencejobs|stacksignal|efinancialcareers|jobrapido|neuvoo|"
+    r"talent\.com|jooble|whatjobs|trabajo|learn4good|adzuna\.[a-z]+/land)", re.I)
+_EXPIRED = re.compile(
+    r"(no longer (accepting|available)|has been (filled|removed)|was removed|this (job|position|vacancy) "
+    r"(has|was) (been )?(removed|filled|expired|closed)|position (has been |is )?filled|"
+    r"not accepting applications|applications? (are |have )?closed|vacancy (has )?(closed|expired)|"
+    r"\bexpired\b|closing date has passed|be an early applicant)", re.I)
+_NONUK = re.compile(
+    r"\b(india|mumbai|bangalore|bengaluru|hyderabad|pune|gurgaon|gurugram|chennai|noida|delhi|kolkata|"
+    r"united states|u\.?s\.?a\.?|\bus hq\b|new york|san francisco|silicon valley|california|texas|boston|"
+    r"chicago|dallas|miami|atlanta|alpharetta|boise|seattle|austin|denver|"
+    r"canada|toronto|vancouver|montreal|ottawa|calgary|"
+    r"france|paris|montrouge|saint-quentin|germany|berlin|munich|frankfurt|"
+    r"spain|madrid|barcelona|portugal|lisbon|porto|netherlands|amsterdam|italy|milan|"
+    r"dubai|abu dhabi|\buae\b|qatar|saudi|bahrain|"
+    r"poland|krak[oó]w|warsaw|wroc[lł]aw|romania|bucharest|hungary|budapest|"
+    r"singapore|hong kong|shanghai|beijing|tokyo|japan|malaysia|philippines|"
+    r"australia|sydney|melbourne|brisbane|perth|new zealand|auckland|"
+    r"ireland|dublin|brazil|mexico|argentina|colombia|south africa|nigeria|kenya)\b", re.I)
+_UK = re.compile(
+    r"\b(united kingdom|england|scotland|wales|northern ireland|\buk\b|london|manchester|"
+    r"birmingham|leeds|glasgow|edinburgh|bristol|cardiff|liverpool|sheffield|newcastle|nottingham|"
+    r"southampton|brighton|coventry|reading|oxford|cambridge|milton keynes|belfast|leicester|"
+    r"aberdeen|dundee|stirling|swansea|remote uk|hybrid)\b", re.I)
+_AGE = re.compile(r"(\d+)\+?\s*(day|week|month|year)s?\s+ago", re.I)
+_UK_CITY = re.compile(
+    r"\b(London|Manchester|Birmingham|Leeds|Glasgow|Edinburgh|Bristol|Cardiff|Liverpool|Sheffield|"
+    r"Newcastle|Nottingham|Southampton|Brighton|Coventry|Reading|Oxford|Cambridge|Milton Keynes|"
+    r"Belfast|Leicester|Aberdeen|Dundee|Stirling|Swansea)\b")
+
+
+def looks_non_uk(text: str) -> bool:
+    """True when the text clearly names a non-UK location and no UK location (shared by ATS + SERP)."""
+    return bool(_NONUK.search(text or "") and not _UK.search(text or ""))
+
+
+def _stale_age(text: str) -> bool:
+    m = _AGE.search(text or "")
+    if not m:
+        return False
+    days = int(m.group(1)) * {"day": 1, "week": 7, "month": 30, "year": 365}[m.group(2).lower()]
+    return days > 45
+
+
+def _reject(title: str, desc: str, link: str) -> bool:
+    """True => drop before the LLM ever sees it (non-UK / expired / stale / stale-aggregator)."""
+    blob = f"{title}  {desc}"
+    if _STALE_HOST.search(link):
+        return True
+    if _EXPIRED.search(blob):
+        return True
+    if _stale_age(blob):
+        return True
+    if _NONUK.search(blob) and not _UK.search(blob):
+        return True
+    return False
+
+
+def _uk_location(title: str, desc: str) -> str:
+    m = _UK_CITY.search(f"{title}  {desc}")
+    return f"{m.group(1)}, United Kingdom" if m else "United Kingdom"
+
+
 def _is_job(url: str, title: str) -> bool:
     return bool(_INDIVIDUAL.search(url) and not _LISTING.search(url) and not _LISTING_TITLE.search(title))
 
@@ -115,10 +181,10 @@ class BrightDataSerpSource(Source):
         jobs: list[Job] = []
         errors = calls = 0
 
-        # 1) broad / gov queries
+        # 1) broad / gov queries - fresh (past month) since boards index by date
         for q in broad_q:
             for page in range(self.pages):
-                data = self._serp(q, start=page * 10)
+                data = self._serp(q, start=page * 10, fresh=True)
                 calls += 1
                 if data is None:
                     errors += 1
@@ -128,16 +194,16 @@ class BrightDataSerpSource(Source):
                     break
                 jobs.extend(found)
 
-        # 2) per-company: EVERY company in the sector. Prefer the company's OWN careers site
-        #    (site:) so we find their real openings; fall back to a name query.
+        # 2) per-company: EVERY company in the sector. Search the company's OWN careers site
+        #    (site:), biased to UK; the code-level _reject() then drops any non-UK/expired result.
         queried = with_roles = 0
         with_roles_names: list[str] = []
-        cats = "(data scientist OR data analyst OR analytics OR machine learning OR data engineer)"
+        cats = ("(data scientist OR data analyst OR analytics OR machine learning OR data engineer) "
+                "(United Kingdom OR London OR UK OR England OR Scotland OR Wales)")
         for entry in self.companies:
             name, curl = entry if isinstance(entry, (tuple, list)) else (entry, "")
             site = _site_of(curl)
-            q = (f"site:{site} {cats}" if site
-                 else f'"{name}" {cats} United Kingdom')
+            q = f"site:{site} {cats}" if site else f'"{name}" {cats}'
             data = self._serp(q, start=0)
             calls += 1
             queried += 1
@@ -164,8 +230,10 @@ class BrightDataSerpSource(Source):
             msg += f" · first_error: {self._first_error[:80]}"
         return SourceResult(self.name, jobs=uniq[:limit], status=status, message=msg, meta=meta)
 
-    def _serp(self, query: str, start: int = 0):
+    def _serp(self, query: str, start: int = 0, fresh: bool = False):
         url = f"https://www.google.com/search?q={quote_plus(query)}&brd_json=1&gl={self.country}&hl=en"
+        if fresh:
+            url += "&tbs=qdr:m"          # past month only - kills stale/expired cached postings
         if start:
             url += f"&start={start}"
         try:
@@ -194,11 +262,13 @@ class BrightDataSerpSource(Source):
             if not isinstance(it, dict):
                 continue
             title, link = _clean(it.get("title", "")), it.get("link", "")
+            desc = _clean(it.get("description", ""))
             if not title or not link or not _is_job(link, title):
                 continue
+            if _reject(title, desc, link):            # drop non-UK / expired / stale / aggregator here
+                continue
             out.append(Job(title=self._clean_title(title), company=company_hint or self._company_from(title),
-                           location="United Kingdom", url=link,
-                           description=_clean(it.get("description", "")),
+                           location=_uk_location(title, desc), url=link, description=desc,
                            source=self.name, source_query=query).finalize())
         return out
 

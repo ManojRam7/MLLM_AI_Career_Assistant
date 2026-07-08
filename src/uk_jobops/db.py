@@ -219,6 +219,33 @@ class Store:
                         [f"%{p}%" for p in patterns])
             return cur.rowcount
 
+    def purge_spam(self) -> int:
+        """Delete already-stored non-UK / expired / removed postings (title+description+location
+        signals). Skips manual and tracked jobs. Idempotent - runs every pass."""
+        expired = (r"(no longer (accepting|available)|has been (filled|removed)|was removed|position "
+                   r"(has been |is )?filled|applications? (are |have )?closed|\yexpired\y|"
+                   r"this (job|vacancy|position) (has|was) (been )?(removed|filled|closed|expired))")
+        nonuk = (r"\y(india|mumbai|bangalore|bengaluru|hyderabad|pune|gurgaon|gurugram|chennai|noida|"
+                 r"united states|\yusa\y|new york|san francisco|california|texas|boston|chicago|dallas|"
+                 r"miami|atlanta|alpharetta|boise|seattle|canada|toronto|vancouver|montreal|"
+                 r"france|paris|montrouge|germany|berlin|munich|spain|madrid|barcelona|portugal|lisbon|"
+                 r"porto|netherlands|amsterdam|dubai|\yuae\y|qatar|saudi|poland|krak|warsaw|romania|"
+                 r"bucharest|singapore|hong kong|tokyo|japan|australia|sydney|melbourne|brisbane|"
+                 r"ireland|dublin|brazil|mexico)\y")
+        uk = (r"\y(united kingdom|england|scotland|wales|northern ireland|\yuk\y|london|manchester|"
+              r"birmingham|leeds|glasgow|edinburgh|bristol|cardiff|liverpool|sheffield|newcastle|"
+              r"nottingham|coventry|reading|oxford|cambridge|belfast|leicester|aberdeen|remote uk)\y")
+        sql = f"""
+        DELETE FROM jobs WHERE is_custom = FALSE AND tracked = FALSE AND (
+            (title || ' ' || coalesce(description,'')) ~* %s
+            OR (
+                (title || ' ' || coalesce(description,'') || ' ' || coalesce(location,'')) ~* %s
+                AND (title || ' ' || coalesce(description,'') || ' ' || coalesce(location,'')) !~* %s
+            ))"""
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (expired, nonuk, uk))
+            return cur.rowcount
+
     def collapse_duplicates(self) -> int:
         """Keep ONE row per (title, company, first-city). Adzuna returns the same job under
         several tracking URLs, so URL-identity leaves cross-run duplicates - this cleans them,

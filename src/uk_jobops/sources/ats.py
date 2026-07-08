@@ -12,6 +12,7 @@ import requests
 
 from ..models import Job
 from .base import Source, SourceResult
+from .brightdata_serp import looks_non_uk
 
 _UA = {"User-Agent": "Mozilla/5.0 (compatible; jobops/1.0)"}
 
@@ -76,7 +77,8 @@ class ATSSource(Source):
             return SourceResult(self.name, status="skipped",
                                 message=f"No companies at {self.path}" + (f" for {self.sector}" if self.sector else ""))
         jobs: list[Job] = []
-        errors = scanned = 0
+        errors = scanned = with_roles = 0
+        with_roles_names: list[str] = []
         for company, url in companies:
             if len(jobs) >= limit:
                 break
@@ -86,13 +88,21 @@ class ATSSource(Source):
             scanned += 1
             ats, token = detected
             try:
-                jobs.extend(self._pull(ats, token, company))
+                # structured ATS data has a real location -> keep only matching UK roles
+                pulled = [j for j in self._pull(ats, token, company)
+                          if self._matches(j.title) and not looks_non_uk(j.location)]
             except requests.RequestException:
                 errors += 1
-        jobs = [j for j in jobs if self._matches(j.title)]
-        return SourceResult(self.name, jobs=jobs[:limit],
-                            message=f"{len(companies)} companies, {scanned} on known ATS, "
-                                    f"{len(jobs)} matched roles, {errors} errors")
+                continue
+            if pulled:
+                with_roles += 1
+                with_roles_names.append(company)
+                jobs.extend(pulled)
+        meta = {"companies_queried": scanned, "companies_with_roles": with_roles,
+                "with_roles_names": with_roles_names[:60]}
+        return SourceResult(self.name, jobs=jobs[:limit], meta=meta,
+                            message=f"{scanned} companies on a known ATS · {len(jobs)} UK matched roles · "
+                                    f"{errors} errors")
 
     def _pull(self, ats: str, token: str, company: str) -> list[Job]:
         out: list[Job] = []
