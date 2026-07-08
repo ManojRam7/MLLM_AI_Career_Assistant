@@ -161,13 +161,15 @@ class Store:
         with self.conn.cursor() as cur:
             cur.execute("UPDATE jobs SET notified=TRUE WHERE dedupe_key = ANY(%s)", (list(keys),))
 
-    def jobs_to_notify(self, min_fit: int = 75, limit: int = 10) -> list[dict[str, Any]]:
-        # NEWEST first so alerts are about fresh discoveries you can act on fast.
+    def jobs_to_notify(self, min_fit: int = 75, limit: int = 10, max_age_days: int = 2) -> list[dict[str, Any]]:
+        # Only FRESH (last few days) high-fit jobs, newest first - so stale backlog never floods you.
+        from datetime import timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).replace(microsecond=0).isoformat()
         return self._rows(
             "SELECT dedupe_key,title,company,location,locations,fit_score,fit_reasoning,url,in_bucket,"
             "bucket_tier,category,sector,first_seen_at,posted_date "
-            "FROM jobs WHERE notified=FALSE AND is_target=TRUE AND fit_score >= %s "
-            "ORDER BY first_seen_at DESC, fit_score DESC LIMIT %s", (min_fit, limit))
+            "FROM jobs WHERE notified=FALSE AND is_target=TRUE AND fit_score >= %s AND first_seen_at >= %s "
+            "ORDER BY first_seen_at DESC, fit_score DESC LIMIT %s", (min_fit, cutoff, limit))
 
     def set_status(self, dedupe_key: str, status: str, notes: str | None = None) -> None:
         fields: dict[str, Any] = {"status": status}
@@ -235,15 +237,21 @@ class Store:
         uk = (r"\y(united kingdom|england|scotland|wales|northern ireland|\yuk\y|london|manchester|"
               r"birmingham|leeds|glasgow|edinburgh|bristol|cardiff|liverpool|sheffield|newcastle|"
               r"nottingham|coventry|reading|oxford|cambridge|belfast|leicester|aberdeen|remote uk)\y")
+        # untrusted aggregator / stale-listing hosts (kept jobs on the company's OWN domain or a
+        # trusted board are untouched)
+        agg = (r"(builtin|bebee|expertini|welcometothejungle|otta\.|datasciencejobs|stacksignal|"
+               r"efinancialcareers|canarywharfian|bulldogjob|alooba|glassdoor|artificialintelligencejobs|"
+               r"harnham|jobrapido|neuvoo|talent\.com|jooble|whatjobs|opendatascience|careerjet|jobsora)")
         sql = f"""
         DELETE FROM jobs WHERE is_custom = FALSE AND tracked = FALSE AND (
-            (title || ' ' || coalesce(description,'')) ~* %s
+            url ~* %s
+            OR (title || ' ' || coalesce(description,'')) ~* %s
             OR (
                 (title || ' ' || coalesce(description,'') || ' ' || coalesce(location,'')) ~* %s
                 AND (title || ' ' || coalesce(description,'') || ' ' || coalesce(location,'')) !~* %s
             ))"""
         with self.conn.cursor() as cur:
-            cur.execute(sql, (expired, nonuk, uk))
+            cur.execute(sql, (agg, expired, nonuk, uk))
             return cur.rowcount
 
     def collapse_duplicates(self) -> int:

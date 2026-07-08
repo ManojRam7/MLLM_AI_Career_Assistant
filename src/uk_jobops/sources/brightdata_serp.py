@@ -100,7 +100,15 @@ _UK = re.compile(
     r"birmingham|leeds|glasgow|edinburgh|bristol|cardiff|liverpool|sheffield|newcastle|nottingham|"
     r"southampton|brighton|coventry|reading|oxford|cambridge|milton keynes|belfast|leicester|"
     r"aberdeen|dundee|stirling|swansea|remote uk|hybrid)\b", re.I)
-_AGE = re.compile(r"(\d+)\+?\s*(day|week|month|year)s?\s+ago", re.I)
+_AGE = re.compile(r"(\d+(?:\.\d+)?)\+?\s*(day|week|month|year)s?\s+ago", re.I)
+# WHITELIST: only these hosts are trusted for fresh, UK, real postings. Everything else
+# (canarywharfian, bulldogjob, alooba, bebee, builtin, expertini, welcometothejungle, harnham,
+# datasciencejobs, glassdoor, efinancialcareers, ...) is dropped. A company's OWN careers domain
+# is trusted only for that company's own query (passed in), and must still show a UK signal.
+_TRUSTED = re.compile(
+    r"(reed\.co\.uk|linkedin\.com|civilservicejobs\.service\.gov\.uk|jobs\.nhs\.uk|greenhouse\.io|"
+    r"lever\.co|ashbyhq\.com|smartrecruiters\.com|myworkdayjobs\.com|workable\.com|recruitee\.com|"
+    r"personio\.|eightfold\.ai)", re.I)
 _UK_CITY = re.compile(
     r"\b(London|Manchester|Birmingham|Leeds|Glasgow|Edinburgh|Bristol|Cardiff|Liverpool|Sheffield|"
     r"Newcastle|Nottingham|Southampton|Brighton|Coventry|Reading|Oxford|Cambridge|Milton Keynes|"
@@ -155,9 +163,7 @@ class BrightDataSerpSource(Source):
         self.run_broad = run_broad
         self.extra_queries = list(extra_queries or [])
         self.site_queries = list(site_queries or [])
-        self.search_domains = list(search_domains or [
-            "uk.linkedin.com/jobs", "www.reed.co.uk/jobs", "www.totaljobs.com",
-            "www.cv-library.co.uk", "uk.indeed.com", "www.glassdoor.co.uk"])
+        self.search_domains = list(search_domains or ["uk.linkedin.com/jobs", "www.reed.co.uk/jobs"])
         self.companies = list(companies or [])       # per-company search targets (sector run = ALL)
         self.max_queries = max_queries               # caps only the broad market queries
         self.pages = max(1, pages)
@@ -189,7 +195,7 @@ class BrightDataSerpSource(Source):
                 if data is None:
                     errors += 1
                     break
-                found = self._extract(data, q, "")
+                found = self._extract(data, q, "", "")
                 if not found:
                     break
                 jobs.extend(found)
@@ -204,13 +210,13 @@ class BrightDataSerpSource(Source):
             name, curl = entry if isinstance(entry, (tuple, list)) else (entry, "")
             site = _site_of(curl)
             q = f"site:{site} {cats}" if site else f'"{name}" {cats}'
-            data = self._serp(q, start=0)
+            data = self._serp(q, start=0, fresh=True)      # past month only
             calls += 1
             queried += 1
             if data is None:
                 errors += 1
                 continue
-            found = self._extract(data, q, name)
+            found = self._extract(data, q, name, site.split("/")[0] if site else "")
             if found:
                 with_roles += 1
                 with_roles_names.append(name)
@@ -254,7 +260,7 @@ class BrightDataSerpSource(Source):
                 self._first_error = str(exc)[:100]
             return None
 
-    def _extract(self, data, query: str, company_hint: str) -> list[Job]:
+    def _extract(self, data, query: str, company_hint: str, company_domain: str = "") -> list[Job]:
         out: list[Job] = []
         if not isinstance(data, dict):
             return out
@@ -265,7 +271,15 @@ class BrightDataSerpSource(Source):
             desc = _clean(it.get("description", ""))
             if not title or not link or not _is_job(link, title):
                 continue
-            if _reject(title, desc, link):            # drop non-UK / expired / stale / aggregator here
+            host = urlparse(link).netloc.lower().replace("www.", "")
+            on_own = bool(company_domain and host == company_domain.lower().replace("www.", ""))
+            # WHITELIST: only a trusted UK/ATS host, or this company's OWN careers domain
+            if not (_TRUSTED.search(host) or on_own):
+                continue
+            if _reject(title, desc, link):            # drop expired / stale / clearly-non-UK
+                continue
+            # a company's own global careers site (Stripe/EY/Cushman) must show a UK signal
+            if on_own and not _TRUSTED.search(host) and not _UK.search(f"{title}  {desc}"):
                 continue
             out.append(Job(title=self._clean_title(title), company=company_hint or self._company_from(title),
                            location=_uk_location(title, desc), url=link, description=desc,

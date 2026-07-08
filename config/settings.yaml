@@ -157,13 +157,9 @@ sources:
     enabled: true
     country: "gb"
     pages: 1                     # SERP pages per query (each page = 1 billed request; keep low for credits)
-    search_domains:              # broad role queries are scoped to these job boards so organic = real jobs
+    search_domains:              # broad queries scoped to TRUSTED UK boards only (aggregators dropped)
       - "uk.linkedin.com/jobs"
       - "www.reed.co.uk/jobs"
-      - "www.totaljobs.com"
-      - "www.cv-library.co.uk"
-      - "uk.indeed.com"
-      - "www.glassdoor.co.uk"
     top_companies_per_run: 5     # rotating per-company sample for the active sector (DS + DA each)
     max_queries: 22              # broad + gov/site + per-company, capped for credit control
     gov_queries: ["data analyst", "data scientist", "data engineer"]
