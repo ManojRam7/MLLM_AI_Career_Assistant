@@ -109,6 +109,8 @@ _TRUSTED = re.compile(
     r"(reed\.co\.uk|linkedin\.com|civilservicejobs\.service\.gov\.uk|jobs\.nhs\.uk|greenhouse\.io|"
     r"lever\.co|ashbyhq\.com|smartrecruiters\.com|myworkdayjobs\.com|workable\.com|recruitee\.com|"
     r"personio\.|eightfold\.ai)", re.I)
+# these are UK-only by definition -> no need to insist on a UK signal in the snippet
+_UK_SAFE = re.compile(r"(reed\.co\.uk|civilservicejobs\.service\.gov\.uk|jobs\.nhs\.uk)", re.I)
 _UK_CITY = re.compile(
     r"\b(London|Manchester|Birmingham|Leeds|Glasgow|Edinburgh|Bristol|Cardiff|Liverpool|Sheffield|"
     r"Newcastle|Nottingham|Southampton|Brighton|Coventry|Reading|Oxford|Cambridge|Milton Keynes|"
@@ -278,13 +280,31 @@ class BrightDataSerpSource(Source):
                 continue
             if _reject(title, desc, link):            # drop expired / stale / clearly-non-UK
                 continue
-            # a company's own global careers site (Stripe/EY/Cushman) must show a UK signal
-            if on_own and not _TRUSTED.search(host) and not _UK.search(f"{title}  {desc}"):
+            # UK-ONLY: except reed/gov (already UK), every result must show a UK signal (kills
+            # non-UK LinkedIn + global company-site jobs the snippet exposes).
+            if not _UK_SAFE.search(host) and not _UK.search(f"{title}  {desc}"):
                 continue
-            out.append(Job(title=self._clean_title(title), company=company_hint or self._company_from(title),
+            # company name: prefer the AUTHORITATIVE url slug (LinkedIn/greenhouse/lever), then the
+            # site: query's company, then title parsing. Fixes 'Capgemini shown as Hugging Face' etc.
+            company = self._company_from_url(link) or (company_hint if on_own else "") or self._company_from(title)
+            out.append(Job(title=self._clean_title(title), company=company,
                            location=_uk_location(title, desc), url=link, description=desc,
                            source=self.name, source_query=query).finalize())
         return out
+
+    @staticmethod
+    def _company_from_url(link: str) -> str:
+        """Authoritative company from the URL slug (LinkedIn '...-at-{company}-{id}', greenhouse/
+        lever/ashby org path). Reliable where the SERP title/keyword is not."""
+        for pat in (r"/jobs/view/.+?-at-([a-z0-9&'._-]+?)-\d{5,}",
+                    r"(?:boards\.|job-boards\.)?greenhouse\.io/([^/]+)/jobs",
+                    r"jobs\.lever\.co/([^/]+)/", r"jobs\.ashbyhq\.com/([^/]+)/",
+                    r"([a-z0-9-]+)\.recruitee\.com"):
+            m = re.search(pat, link, re.I)
+            if m:
+                name = m.group(1).replace("-", " ").replace("_", " ").strip()
+                return " ".join(w.capitalize() for w in name.split()) if name else ""
+        return ""
 
     @staticmethod
     def _company_from(title: str) -> str:
