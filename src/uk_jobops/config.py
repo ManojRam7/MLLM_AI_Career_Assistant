@@ -39,6 +39,7 @@ class Secrets:
     deepseek_api_key: str = ""
     brightdata_api_key: str = ""
     brightdata_serp_zone: str = "serp"
+    brightdata_linkedin_dataset: str = ""
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
@@ -55,6 +56,7 @@ class Secrets:
             deepseek_api_key=g("DEEPSEEK_API_KEY", ""),
             brightdata_api_key=g("BRIGHTDATA_API_KEY", ""),
             brightdata_serp_zone=g("BRIGHTDATA_SERP_ZONE", "serp"),
+            brightdata_linkedin_dataset=g("BRIGHTDATA_LINKEDIN_DATASET", ""),
             telegram_bot_token=g("TELEGRAM_BOT_TOKEN", ""),
             telegram_chat_id=g("TELEGRAM_CHAT_ID", ""),
         )

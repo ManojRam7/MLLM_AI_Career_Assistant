@@ -176,6 +176,15 @@ sources:
       - "analytics engineer United Kingdom"
       - "AI engineer United Kingdom"
       - "graduate data scientist United Kingdom"
+  linkedin:                      # STRUCTURED LinkedIn Jobs via Bright Data Web Scraper API (accurate)
+    enabled: false               # OFF - the LinkedIn dataset needs a $250 min order. SERP handles LinkedIn.
+                                 # flip true + set BRIGHTDATA_LINKEDIN_DATASET only if you buy the dataset.
+    keywords: ["data scientist", "data analyst", "machine learning engineer"]
+    location: "United Kingdom"
+    country: "GB"
+    time_range: "Past month"     # freshness (fewer, fresher records = lower cost)
+    max_age_days: 30
+    max_wait: 480                # seconds to wait for the async scrape (poll)
 
 cleanup:                         # one-time / ongoing housekeeping, runs every pass (idempotent)
   purge_sources: ["Apify"]       # delete rows from retired sources (old 'Google (Apify)' rows)

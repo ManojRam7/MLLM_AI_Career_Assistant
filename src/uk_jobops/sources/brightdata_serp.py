@@ -189,10 +189,11 @@ class BrightDataSerpSource(Source):
         jobs: list[Job] = []
         errors = calls = 0
 
-        # 1) broad / gov queries - fresh (past month) since boards index by date
+        # 1) broad / gov queries - PAST WEEK (LinkedIn/Reed re-index daily, so this kills almost all
+        #    expired/'no longer accepting' postings that SERP snippets can't otherwise detect)
         for q in broad_q:
             for page in range(self.pages):
-                data = self._serp(q, start=page * 10, fresh=True)
+                data = self._serp(q, start=page * 10, fresh="w")
                 calls += 1
                 if data is None:
                     errors += 1
@@ -212,7 +213,7 @@ class BrightDataSerpSource(Source):
             name, curl = entry if isinstance(entry, (tuple, list)) else (entry, "")
             site = _site_of(curl)
             q = f"site:{site} {cats}" if site else f'"{name}" {cats}'
-            data = self._serp(q, start=0, fresh=True)      # past month only
+            data = self._serp(q, start=0, fresh="m")        # past month (career pages re-index slower)
             calls += 1
             queried += 1
             if data is None:
@@ -238,10 +239,11 @@ class BrightDataSerpSource(Source):
             msg += f" · first_error: {self._first_error[:80]}"
         return SourceResult(self.name, jobs=uniq[:limit], status=status, message=msg, meta=meta)
 
-    def _serp(self, query: str, start: int = 0, fresh: bool = False):
+    def _serp(self, query: str, start: int = 0, fresh: str = ""):
+        # fresh: "w" = past week, "m" = past month, "" = no limit. Fresher => fewer expired jobs.
         url = f"https://www.google.com/search?q={quote_plus(query)}&brd_json=1&gl={self.country}&hl=en"
-        if fresh:
-            url += "&tbs=qdr:m"          # past month only - kills stale/expired cached postings
+        if fresh in ("w", "m"):
+            url += f"&tbs=qdr:{fresh}"
         if start:
             url += f"&start={start}"
         try:

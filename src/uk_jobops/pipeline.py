@@ -39,11 +39,28 @@ class Pipeline:
         # Bright Data SERP (Google) - the main discovery engine. Broad job-board queries +
         # gov/LinkedIn site: queries (on the broad run or the relevant sector) + a rotating
         # per-company sample for the active sector.
+        # STRUCTURED LinkedIn (Bright Data dataset) - accurate company/location/active-status.
+        # Runs on the broad/full run (keyword discovery is market-wide). When active, SERP stops
+        # searching LinkedIn (structured is better) to avoid duplicate, lower-quality LinkedIn rows.
+        li = src_cfg.get("linkedin", {})
+        linkedin_on = bool(run_broad and li.get("enabled") and sec.brightdata_api_key
+                           and sec.brightdata_linkedin_dataset)
+        if linkedin_on:
+            from .sources.brightdata_linkedin import BrightDataLinkedInSource
+            out.append(BrightDataLinkedInSource(
+                sec.brightdata_api_key, sec.brightdata_linkedin_dataset,
+                keywords=li.get("keywords"), location=li.get("location", "United Kingdom"),
+                country=li.get("country", "GB"), time_range=li.get("time_range", "Past month"),
+                max_wait=li.get("max_wait", 480), max_age_days=li.get("max_age_days", 30)))
+
         bd = src_cfg.get("brightdata", {})
         if bd.get("enabled") and sec.brightdata_api_key:
             from .bucketlist import companies_in_sector
             from .sources.ats import detect_ats
             from .sources.brightdata_serp import BrightDataSerpSource
+            _domains = bd.get("search_domains")
+            if linkedin_on:                       # structured LinkedIn handles LinkedIn -> drop it from SERP
+                _domains = [d for d in (_domains or []) if "linkedin" not in d.lower()] or ["www.reed.co.uk/jobs"]
             # sector run => every company. Companies whose careers page is a known ATS are handled by
             # ATSSource (structured, real UK location); SERP only searches the REST (no double-search,
             # saves credits). Broad run => market queries only.
@@ -54,7 +71,7 @@ class Pipeline:
                 sector=sector, run_broad=run_broad,
                 extra_queries=bd.get("extra_queries", []),
                 site_queries=self._gov_site_queries(sector, run_broad, bd),
-                search_domains=bd.get("search_domains"), companies=companies,
+                search_domains=_domains, companies=companies,
                 max_queries=bd.get("max_queries", 20), pages=bd.get("pages", 1),
                 country=bd.get("country", "gb")))
         return out
