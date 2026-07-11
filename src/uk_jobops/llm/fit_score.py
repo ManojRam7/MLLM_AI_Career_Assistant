@@ -65,10 +65,12 @@ def score_fit(llm: LLM, base_cv: dict, job: dict, profile: dict | None = None) -
     return _to_result(llm.complete_json(SYSTEM, user, provider=llm.score_provider, model=llm.score_model))
 
 
-def score_fit_batch(llm: LLM, base_cv: dict, jobs: list[dict], profile: dict | None = None) -> dict[int, FitResult]:
+def score_fit_batch(llm: LLM, base_cv: dict, jobs: list[dict], profile: dict | None = None,
+                    provider: str | None = None, model: str | None = None) -> dict[int, FitResult]:
     """Score several jobs in ONE LLM call (far fewer calls + tokens than one-by-one,
     so we stay inside free-tier rate limits). Returns {chunk_index: FitResult} for the
-    jobs the model actually returned; any it omits stay unscored and retry next run."""
+    jobs the model actually returned; any it omits stay unscored and retry next run.
+    `provider`/`model` override the default scorer (used for a second-opinion Gemini pass)."""
     if not jobs:
         return {}
     blocks = []
@@ -83,7 +85,8 @@ def score_fit_batch(llm: LLM, base_cv: dict, jobs: list[dict], profile: dict | N
         '"reasoning": "2 sentences", "ghost_flag": bool, "gaps": ["..."]}]'
     )
     arr = _extract_array(llm.complete(SYSTEM + "\nReturn ONLY a JSON array, no prose, no code fences.",
-                                      user, provider=llm.score_provider, model=llm.score_model))
+                                      user, provider=provider or llm.score_provider,
+                                      model=model or llm.score_model))
     out: dict[int, FitResult] = {}
     for obj in arr:
         if not isinstance(obj, dict):

@@ -299,16 +299,16 @@ with tab_overview:
         left, right = st.columns(2)
         with left:
             st.subheader("By status")
-            st.altair_chart(bar(ov["status"].value_counts(), scheme="tableau10"), use_container_width=True)
+            st.altair_chart(bar(ov["status"].value_counts(), scheme="tableau10"), width="stretch")
         with right:
             st.subheader("By source")
-            st.altair_chart(bar(ov["source"].value_counts(), scheme="set2"), use_container_width=True)
+            st.altair_chart(bar(ov["source"].value_counts(), scheme="set2"), width="stretch")
 
         st.subheader("By sector")
         st.caption("How many fetched jobs map to each of your 7 Master-List sectors "
                    "('— other —' = employers not on the Master List, e.g. broad Adzuna/Reed hits).")
         st.altair_chart(bar(ov["sector"].value_counts(), scheme="tableau20", horizontal=False, height=360,
-                            sort="-y"), use_container_width=True)
+                            sort="-y"), width="stretch")
 
         st.subheader("Fit-score distribution")
         scored = ov[ov["fit_score"] > 0]
@@ -318,7 +318,7 @@ with tab_overview:
             bins = pd.cut(scored["fit_score"], [0, 50, 65, 75, 85, 100],
                           labels=["<50", "50-64", "65-74", "75-84", "85+"])
             st.altair_chart(bar(bins.value_counts().sort_index(), scheme="redyellowgreen", sort=None),
-                            use_container_width=True)
+                            width="stretch")
 
         st.subheader("Top matches")
         top_cols = ["new", "title", "company", "sector", "locations", "fit", "in_bucket", "status", "posted", "fetched", "url"]
@@ -404,8 +404,10 @@ with tab_pipeline:
                 "Reed": sc.get("Reed", 0), "Adzuna": sc.get("Adzuna", 0), "Google": google,
                 "ATS": ats, "Gov": gov,
                 "🧭 DS": sj.get("category_data_science", 0), "DA": sj.get("category_data_analysis", 0),
-                "🔎 searched": sj.get("companies_searched", 0), "of": sj.get("companies_in_sector", ""),
-                "co. w/roles": sj.get("companies_with_roles", 0), "⭐ bucket": sj.get("bucket_matches", 0),
+                "🔎 searched": int(sj.get("companies_searched", 0) or 0),
+                "of": str(sj.get("companies_in_sector", "") or ""),   # str: sector runs int, ALL runs "" (Arrow-safe)
+                "co. w/roles": int(sj.get("companies_with_roles", 0) or 0),
+                "⭐ bucket": int(sj.get("bucket_matches", 0) or 0),
                 "scored": r.get("scored"), "tailored": r.get("tailored"),
                 "src status": " · ".join(f"{s.get('source','?').split(' (')[0]}:{s.get('status','?')}"
                                          + (f"({s.get('count',0)})" if s.get('status') != 'ok' or not s.get('count') else "")

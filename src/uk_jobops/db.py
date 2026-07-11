@@ -221,6 +221,15 @@ class Store:
                         [f"%{p}%" for p in patterns])
             return cur.rowcount
 
+    def reset_serp(self) -> int:
+        """One-time cleanup: delete every non-tracked, non-manual Bright Data (SERP) job so the
+        now-clean pipeline can repopulate from scratch (old rows have stale/fake-UK data that the
+        pattern purges can't detect). Tracked and manually-added jobs are kept."""
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM jobs WHERE is_custom = FALSE AND tracked = FALSE "
+                        "AND source ILIKE %s", ("%Bright Data%",))
+            return cur.rowcount
+
     def purge_spam(self) -> int:
         """Delete already-stored non-UK / expired / removed postings (title+description+location
         signals). Skips manual and tracked jobs. Idempotent - runs every pass."""

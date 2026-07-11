@@ -143,6 +143,7 @@ scoring:
   max_score_per_run: 150         # DeepSeek (paid credits) is cheap + batched, so score a big backlog each run
   score_batch_size: 8            # jobs scored per LLM call (fewer calls + tokens; clears backlog faster)
   max_tailor_per_run: 8          # Gemini via Google AI Pro has expanded limits, so tailor a few more per run
+  verify_threshold: 70           # two-model consensus: re-check DeepSeek picks >= this with Gemini (0 = off)
 
 notify:
   min_fit: 75                    # only send a Telegram alert for jobs at/above this fit

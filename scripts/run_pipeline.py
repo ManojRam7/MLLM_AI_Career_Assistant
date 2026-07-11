@@ -52,9 +52,17 @@ def main() -> None:
     ap.add_argument("--mode", default="recurring", choices=["first", "recurring"])
     ap.add_argument("--sector", default=None,
                     help="sector name, 'auto' (pick by UTC hour), or 'full' (no sector focus)")
+    ap.add_argument("--reset-serp", action="store_true",
+                    help="one-time: delete non-tracked Bright Data jobs before the run (clears old spam)")
     args = ap.parse_args()
     try:
         cfg = load_config()
+        if args.reset_serp and cfg.secrets.supabase_db_url:
+            from uk_jobops.db import Store
+            _s = Store(cfg.secrets.supabase_db_url)
+            _s.init_schema()
+            print(f"[reset-serp] deleted {_s.reset_serp()} old Bright Data rows", file=sys.stderr)
+            _s.close()
         sector = _resolve_sector(args.sector, cfg)
         print(json.dumps(run(args.mode, sector), indent=2, default=str))
     except ConfigError as exc:

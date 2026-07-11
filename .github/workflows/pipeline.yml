@@ -18,6 +18,9 @@ on:
       sector:
         description: "sector name, 'auto' (by UTC hour), or 'full' (all sources, no focus)"
         default: "auto"
+      reset:
+        description: "set 'true' ONCE to wipe old Bright Data jobs and rebuild clean"
+        default: "false"
 
 permissions:
   contents: read
@@ -51,6 +54,7 @@ jobs:
           python scripts/run_pipeline.py
           --mode "${{ github.event.inputs.mode || 'recurring' }}"
           --sector "${{ github.event.inputs.sector || 'auto' }}"
+          ${{ github.event.inputs.reset == 'true' && '--reset-serp' || '' }}
 
       - name: Upload tailored CVs + digest
         if: always()

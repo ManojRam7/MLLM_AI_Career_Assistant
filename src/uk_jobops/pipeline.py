@@ -224,6 +224,26 @@ class Pipeline:
                             if _rate_limited(exc2):
                                 llm_exhausted = True
                                 break
+                # SECOND OPINION: verify DeepSeek's high-fit picks with Gemini (two-model consensus).
+                # Only the high-fit subset -> token-cheap. Keep the LOWER score (conservative) and
+                # OR the ghost flags, so a job only stays high if BOTH models agree.
+                vth = scoring.get("verify_threshold", 0)
+                if vth and not llm_exhausted:
+                    high = [(i, job) for i, job in enumerate(chunk)
+                            if results.get(i) and results[i].score >= vth]
+                    if high:
+                        try:
+                            vres = score_fit_batch(llm, self.cfg.base_cv, [j for _, j in high], self.cfg.profile,
+                                                   provider=lc.get("tailor_provider"), model=lc.get("tailor_model"))
+                            for k, (i, _job) in enumerate(high):
+                                v = vres.get(k)
+                                if v:
+                                    if v.score < results[i].score:
+                                        results[i].score, results[i].reasoning = v.score, v.reasoning or results[i].reasoning
+                                    results[i].ghost_flag = results[i].ghost_flag or v.ghost_flag
+                            summary["verified"] = summary.get("verified", 0) + len(high)
+                        except LLMError as exc:
+                            errors.append("verify: " + str(exc)[:120])
                 for idx, job in enumerate(chunk):
                     fit = results.get(idx)
                     if fit is None:
