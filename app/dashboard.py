@@ -147,7 +147,16 @@ def bar(series, *, scheme="tableau20", horizontal=False, height=300, sort="-y"):
         tooltip=["k", "v"])
     txt = base.mark_text(color="white", fontWeight="bold",
                          **({"align": "left", "dx": 4} if horizontal else {"dy": -7})).encode(text="v:Q")
-    return (bars + txt).properties(height=height).configure_view(strokeWidth=0)
+    return (bars + txt).properties(height=height, width="container").configure_view(strokeWidth=0)
+
+
+def show_bar(series, **kw):
+    """Render the coloured Altair bar chart; fall back to a native bar chart if Altair errors
+    (Streamlit/Altair version drift) so a chart NEVER degrades into a raw k/v table."""
+    try:
+        st.altair_chart(bar(series, **kw))
+    except Exception:  # noqa: BLE001
+        st.bar_chart(series)
 
 
 def _priority(row) -> str:
@@ -299,16 +308,15 @@ with tab_overview:
         left, right = st.columns(2)
         with left:
             st.subheader("By status")
-            st.altair_chart(bar(ov["status"].value_counts(), scheme="tableau10"), width="stretch")
+            show_bar(ov["status"].value_counts(), scheme="tableau10")
         with right:
             st.subheader("By source")
-            st.altair_chart(bar(ov["source"].value_counts(), scheme="set2"), width="stretch")
+            show_bar(ov["source"].value_counts(), scheme="set2")
 
         st.subheader("By sector")
         st.caption("How many fetched jobs map to each of your 7 Master-List sectors "
                    "('— other —' = employers not on the Master List, e.g. broad Adzuna/Reed hits).")
-        st.altair_chart(bar(ov["sector"].value_counts(), scheme="tableau20", horizontal=False, height=360,
-                            sort="-y"), width="stretch")
+        show_bar(ov["sector"].value_counts(), scheme="tableau20", horizontal=False, height=360, sort="-y")
 
         st.subheader("Fit-score distribution")
         scored = ov[ov["fit_score"] > 0]
@@ -317,8 +325,7 @@ with tab_overview:
         else:
             bins = pd.cut(scored["fit_score"], [0, 50, 65, 75, 85, 100],
                           labels=["<50", "50-64", "65-74", "75-84", "85+"])
-            st.altair_chart(bar(bins.value_counts().sort_index(), scheme="redyellowgreen", sort=None),
-                            width="stretch")
+            show_bar(bins.value_counts().sort_index(), scheme="redyellowgreen", sort=None)
 
         st.subheader("Top matches")
         top_cols = ["new", "title", "company", "sector", "locations", "fit", "in_bucket", "status", "posted", "fetched", "url"]

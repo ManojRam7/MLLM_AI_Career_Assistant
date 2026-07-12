@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import csv
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import requests
@@ -14,7 +15,32 @@ from ..models import Job
 from .base import Source, SourceResult
 from .brightdata_serp import looks_non_uk
 
-_UA = {"User-Agent": "Mozilla/5.0 (compatible; jobops/1.0)"}
+_UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
+
+# ATS board links that companies embed inside their own careers landing page.
+# When careers_url is a marketing page (e.g. careers.company.com) the real board
+# lives here - we follow the page once (free, no anti-bot on most career pages)
+# and pull the ATS API. Ordered so the most specific hosts win.
+_ATS_LINK = re.compile(
+    r"https?://[^\s\"'<>)]*?(?:"
+    r"(?:boards|job-boards)\.greenhouse\.io/[A-Za-z0-9_-]+"
+    r"|jobs\.lever\.co/[A-Za-z0-9_-]+"
+    r"|jobs\.ashbyhq\.com/[A-Za-z0-9_-]+"
+    r"|(?:careers|jobs)\.smartrecruiters\.com/[A-Za-z0-9_&.-]+"
+    r"|apply\.workable\.com/[A-Za-z0-9_-]+"
+    r"|[A-Za-z0-9_-]+\.workable\.com"
+    r"|[A-Za-z0-9_-]+\.recruitee\.com"
+    r"|[A-Za-z0-9_-]+\.eightfold\.ai"
+    r"|[A-Za-z0-9_-]+\.jobs\.personio\.(?:com|de)"
+    r"|[A-Za-z0-9-]+\.wd\d+\.myworkdayjobs\.com/[^\s\"'<>)]+"
+    r")", re.I)
+# Greenhouse/Ashby often load the board via a JS embed that only names the org token.
+_EMBED = [
+    (re.compile(r"greenhouse\.io/embed/job_board\?for=([A-Za-z0-9_-]+)", re.I), "greenhouse"),
+    (re.compile(r'(?:data-|")gh[-_]?src["\s=]+[^"\']*?boards\.greenhouse\.io/([A-Za-z0-9_-]+)', re.I), "greenhouse"),
+    (re.compile(r"ashbyhq\.com/([A-Za-z0-9_-]+)/embed", re.I), "ashby"),
+]
 
 
 def detect_ats(url: str) -> tuple[str, str] | None:
@@ -44,13 +70,49 @@ def detect_ats(url: str) -> tuple[str, str] | None:
     return None
 
 
+def resolve_ats(url: str, *, follow: bool = True, timeout: int = 12) -> tuple[str, str] | None:
+    """Best-effort: return (ats, token) for a careers URL.
+    1) if the URL itself is a known ATS -> use it directly (free, no fetch).
+    2) else fetch the careers landing page once and detect the ATS board embedded/
+       linked inside it (careers.company.com -> its Greenhouse/Lever/Workday board).
+    Marketing career pages are rarely anti-bot, so this is a free coverage win.
+    Returns None when the page is JS-only/custom (those fall through to Bright Data)."""
+    direct = detect_ats(url)
+    if direct or not follow or not url:
+        return direct
+    try:
+        r = requests.get(url, timeout=timeout, headers=_UA, allow_redirects=True)
+    except requests.RequestException:
+        return None
+    # a redirect may land us straight on the ATS host
+    landed = detect_ats(r.url)
+    if landed:
+        return landed
+    if r.status_code != 200 or not r.text:
+        return None
+    html = r.text
+    m = _ATS_LINK.search(html)
+    if m:
+        found = detect_ats(m.group(0))
+        if found:
+            return found
+    for pat, ats in _EMBED:            # JS-embed boards that only name the org token
+        e = pat.search(html)
+        if e:
+            return ats, e.group(1)
+    return None
+
+
 class ATSSource(Source):
     name = "Company ATS"
 
-    def __init__(self, bucket_list_path: str, include_terms: list[str], sector: str | None = None):
+    def __init__(self, bucket_list_path: str, include_terms: list[str], sector: str | None = None,
+                 follow_careers: bool = True, max_workers: int = 8):
         self.path = Path(bucket_list_path)
         self.include = [t.lower() for t in include_terms]
         self.sector = sector
+        self.follow_careers = follow_careers      # classify custom careers pages to find embedded ATS boards
+        self.max_workers = max_workers
 
     def _companies(self) -> list[tuple[str, str]]:
         if not self.path.exists():
@@ -77,32 +139,48 @@ class ATSSource(Source):
             return SourceResult(self.name, status="skipped",
                                 message=f"No companies at {self.path}" + (f" for {self.sector}" if self.sector else ""))
         jobs: list[Job] = []
-        errors = scanned = with_roles = 0
+        errors = scanned = with_roles = classified = 0
         with_roles_names: list[str] = []
-        for company, url in companies:
-            if len(jobs) >= limit:
-                break
-            detected = detect_ats(url)
+
+        def work(item: tuple[str, str]):
+            """Resolve a company's ATS (direct or by following its careers page) and pull UK roles."""
+            company, url = item
+            direct = bool(detect_ats(url))
+            detected = resolve_ats(url, follow=self.follow_careers)
             if not detected:
-                continue
-            scanned += 1
+                return None
             ats, token = detected
             try:
-                # structured ATS data has a real location -> keep only matching UK roles
                 pulled = [j for j in self._pull(ats, token, company)
                           if self._matches(j.title) and not looks_non_uk(j.location)]
             except requests.RequestException:
-                errors += 1
-                continue
-            if pulled:
-                with_roles += 1
-                with_roles_names.append(company)
-                jobs.extend(pulled)
+                return (company, "error", direct)
+            return (company, pulled, direct)
+
+        # threaded: most time is network wait (careers-page fetches + ATS APIs)
+        with ThreadPoolExecutor(max_workers=max(1, self.max_workers)) as ex:
+            futures = [ex.submit(work, c) for c in companies]
+            for fut in as_completed(futures):
+                res = fut.result()
+                if res is None:
+                    continue
+                company, pulled, direct = res
+                scanned += 1
+                if not direct:
+                    classified += 1          # covered only because we followed the careers page
+                if pulled == "error":
+                    errors += 1
+                    continue
+                if pulled:
+                    with_roles += 1
+                    with_roles_names.append(company)
+                    jobs.extend(pulled)
+
         meta = {"companies_queried": scanned, "companies_with_roles": with_roles,
-                "with_roles_names": with_roles_names[:60]}
+                "classified_from_careers": classified, "with_roles_names": with_roles_names[:60]}
         return SourceResult(self.name, jobs=jobs[:limit], meta=meta,
-                            message=f"{scanned} companies on a known ATS · {len(jobs)} UK matched roles · "
-                                    f"{errors} errors")
+                            message=f"{scanned} companies on a known ATS ({classified} found via careers page) · "
+                                    f"{len(jobs)} UK matched roles · {errors} errors")
 
     def _pull(self, ats: str, token: str, company: str) -> list[Job]:
         out: list[Job] = []

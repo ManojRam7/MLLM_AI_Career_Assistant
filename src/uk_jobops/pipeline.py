@@ -36,6 +36,18 @@ class Pipeline:
         # ATS scans this sector's companies (free, accurate) - every sector run.
         if src_cfg.get("ats", {}).get("enabled"):
             out.append(ATSSource(bucket_path, self.s.get("seniority", {}).get("include", []), sector=sector))
+        # Cheap STRUCTURED LinkedIn via Apify, filtered by companyName -> searches EACH of this
+        # sector's list companies on LinkedIn (real per-company coverage). Sector runs only.
+        al = src_cfg.get("apify_linkedin", {})
+        if sector and al.get("enabled") and sec.apify_tokens:
+            from .bucketlist import companies_in_sector
+            from .sources.apify_linkedin import ApifyLinkedInSource
+            out.append(ApifyLinkedInSource(
+                sec.apify_tokens, companies_in_sector(self.cfg.path(bucket_path), sector),
+                actor=al.get("actor", "valig~linkedin-jobs-scraper"), title_queries=al.get("title_queries"),
+                location=al.get("location", "United Kingdom"), date_posted=al.get("date_posted", "r604800"),
+                batch_size=al.get("batch_size", 40), max_jobs_per_company=al.get("max_jobs_per_company", 6),
+                max_batches=al.get("max_batches", 8)))
         # Bright Data SERP (Google) - the main discovery engine. Broad job-board queries +
         # gov/LinkedIn site: queries (on the broad run or the relevant sector) + a rotating
         # per-company sample for the active sector.

@@ -176,8 +176,21 @@ sources:
       - "analytics engineer United Kingdom"
       - "AI engineer United Kingdom"
       - "graduate data scientist United Kingdom"
-  linkedin:                      # STRUCTURED LinkedIn Jobs via Bright Data Web Scraper API (accurate)
-    enabled: false               # OFF - the LinkedIn dataset needs a $250 min order. SERP handles LinkedIn.
+  apify_linkedin:                # cheap STRUCTURED LinkedIn via Apify, filtered by companyName (per-company)
+    enabled: false               # OFF - Apify free credits expire after ~12 runs and paid plans are costly.
+                                 # We cover companies for free via the expanded ATS layer (careers-page classifier)
+                                 # + Bright Data SERP for custom/anti-bot sites. Flip true only to A/B test Apify.
+    actor: "valig~linkedin-jobs-scraper"
+    title_queries:
+      - "data scientist OR machine learning engineer OR AI engineer"
+      - "data analyst OR analytics engineer OR business intelligence analyst"
+    location: "United Kingdom"
+    date_posted: "r604800"       # past 7 days (freshness)
+    batch_size: 40               # companies per actor run (LinkedIn companyName filter)
+    max_jobs_per_company: 6
+    max_batches: 8               # cap actor runs per pipeline run (credit control)
+  linkedin:                      # STRUCTURED LinkedIn Jobs via Bright Data Web Scraper API
+    enabled: false               # OFF - the Bright Data LinkedIn dataset needs a $250 min order.
                                  # flip true + set BRIGHTDATA_LINKEDIN_DATASET only if you buy the dataset.
     keywords: ["data scientist", "data analyst", "machine learning engineer"]
     location: "United Kingdom"
