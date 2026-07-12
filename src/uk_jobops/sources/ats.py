@@ -13,7 +13,7 @@ import requests
 
 from ..models import Job
 from .base import Source, SourceResult
-from .brightdata_serp import looks_non_uk
+from .brightdata_serp import ats_uk_ok
 
 _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
@@ -151,8 +151,9 @@ class ATSSource(Source):
                 return None
             ats, token = detected
             try:
+                # ATS data has an authoritative location -> STRICT UK gate (drop foreign roles)
                 pulled = [j for j in self._pull(ats, token, company)
-                          if self._matches(j.title) and not looks_non_uk(j.location)]
+                          if self._matches(j.title) and ats_uk_ok(j.location)]
             except requests.RequestException:
                 return (company, "error", direct)
             return (company, pulled, direct)
@@ -206,8 +207,20 @@ class ATSSource(Source):
             r = requests.get(f"https://api.ashbyhq.com/posting-api/job-board/{token}", timeout=30, headers=_UA)
             r.raise_for_status()
             for it in r.json().get("jobs", []):
+                # Ashby often labels the job "United Kingdom" while the real office (address/secondary
+                # location) is abroad -> build a COMBINED location so ats_uk_ok sees the foreign country.
+                parts = [it.get("locationName") or it.get("location") or ""]
+                for sl in it.get("secondaryLocations") or []:
+                    if isinstance(sl, dict):
+                        loc = sl.get("location")
+                        parts.append(loc.get("name", "") if isinstance(loc, dict)
+                                     else (sl.get("locationName") or (loc if isinstance(loc, str) else "")))
+                addr = (it.get("address") or {}).get("postalAddress") or {}
+                parts += [addr.get("addressLocality", ""), addr.get("addressRegion", ""),
+                          addr.get("addressCountry", "")]
+                locstr = ", ".join(dict.fromkeys(p for p in parts if p))   # de-dupe, keep order
                 out.append(Job(title=it.get("title", ""), company=company,
-                               location=it.get("locationName", ""), url=it.get("jobUrl", ""),
+                               location=locstr, url=it.get("jobUrl", ""),
                                description=it.get("descriptionPlain", ""), source=self.name).finalize())
         elif ats == "smartrecruiters":
             r = requests.get(f"https://api.smartrecruiters.com/v1/companies/{token}/postings?limit=100",

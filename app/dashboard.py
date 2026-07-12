@@ -404,12 +404,15 @@ with tab_pipeline:
             google = next((v for k, v in sc.items() if "Google" in k), 0)
             ats = next((v for k, v in sc.items() if "ATS" in k), 0)
             gov = sum(v for k, v in sc.items() if "NHS" in k or "Civil Service" in k)
+            # how many ATS companies were found by FOLLOWING the careers page (the classifier)
+            ats_classified = next((s.get("meta", {}).get("classified_from_careers", 0)
+                                   for s in sj.get("sources", []) if "ATS" in s.get("source", "")), 0)
             disp.append({
                 "run": _local(r.get("run_at")), "mode": r.get("mode"),
                 "sector": sj.get("sector", "ALL"),
                 "found": r.get("discovered"), "new": r.get("stored_new"),
                 "Reed": sc.get("Reed", 0), "Adzuna": sc.get("Adzuna", 0), "Google": google,
-                "ATS": ats, "Gov": gov,
+                "ATS": ats, "ATS via careers": int(ats_classified or 0), "Gov": gov,
                 "🧭 DS": sj.get("category_data_science", 0), "DA": sj.get("category_data_analysis", 0),
                 "🔎 searched": int(sj.get("companies_searched", 0) or 0),
                 "of": str(sj.get("companies_in_sector", "") or ""),   # str: sector runs int, ALL runs "" (Arrow-safe)

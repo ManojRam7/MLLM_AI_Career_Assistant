@@ -89,12 +89,32 @@ _NONUK = re.compile(
     r"chicago|dallas|miami|atlanta|alpharetta|boise|seattle|austin|denver|"
     r"canada|toronto|vancouver|montreal|ottawa|calgary|"
     r"france|paris|montrouge|saint-quentin|germany|berlin|munich|frankfurt|"
-    r"spain|madrid|barcelona|portugal|lisbon|porto|netherlands|amsterdam|italy|milan|"
-    r"dubai|abu dhabi|\buae\b|qatar|saudi|bahrain|"
+    r"spain|madrid|barcelona|portugal|lisbon|porto|netherlands|amsterdam|italy|milan|rome|"
+    r"belgium|brussels|machelen|antwerp|luxembourg|"
+    r"switzerland|zurich|geneva|basel|austria|vienna|"
+    r"sweden|stockholm|denmark|copenhagen|norway|oslo|finland|helsinki|"
+    r"latvia|riga|lithuania|vilnius|estonia|tallinn|"
+    r"czech|prague|greece|athens|ukraine|kyiv|kiev|turkey|istanbul|israel|tel aviv|"
+    r"dubai|abu dhabi|\buae\b|qatar|saudi|bahrain|egypt|cairo|"
     r"poland|krak[oó]w|warsaw|wroc[lł]aw|romania|bucharest|hungary|budapest|"
-    r"singapore|hong kong|shanghai|beijing|tokyo|japan|malaysia|philippines|"
+    r"singapore|hong kong|shanghai|beijing|tokyo|japan|south korea|seoul|malaysia|philippines|"
+    r"indonesia|jakarta|thailand|bangkok|vietnam|hanoi|"
     r"australia|sydney|melbourne|brisbane|perth|new zealand|auckland|"
-    r"ireland|dublin|brazil|mexico|argentina|colombia|south africa|nigeria|kenya)\b", re.I)
+    r"ireland|dublin|brazil|mexico|argentina|colombia|chile|south africa|nigeria|kenya)\b", re.I)
+# Explicit non-UK COUNTRIES / states / clearly-foreign cities. Unlike _NONUK this WINS even when a
+# UK-named city is also present (e.g. "Cambridge (USA)", "London, Ontario") - used for structured ATS
+# locations where the country field is authoritative.
+_NONUK_COUNTRY = re.compile(
+    r"\b(united states|u\.?s\.?a\.?|\bu\.?s\.?\b|america|canada|india|ireland|"
+    r"germany|france|spain|portugal|netherlands|belgium|luxembourg|switzerland|austria|italy|"
+    r"poland|romania|hungary|czech|greece|sweden|denmark|norway|finland|"
+    r"latvia|lithuania|estonia|ukraine|turkey|israel|"
+    r"\buae\b|qatar|saudi|bahrain|egypt|singapore|hong kong|china|japan|korea|malaysia|"
+    r"philippines|indonesia|thailand|vietnam|australia|new zealand|"
+    r"brazil|mexico|argentina|colombia|chile|south africa|nigeria|kenya|"
+    r"massachusetts|california|texas|new york|washington|illinois|georgia|florida|"
+    r"riga|lisbon|dublin|brussels|machelen|amsterdam|paris|berlin|madrid|barcelona|milan)\b", re.I)
+_REMOTE = re.compile(r"\b(remote|flexible|home[- ]?based|work from home|anywhere in the uk|distributed)\b", re.I)
 _UK = re.compile(
     r"\b(united kingdom|england|scotland|wales|northern ireland|\buk\b|london|manchester|"
     r"birmingham|leeds|glasgow|edinburgh|bristol|cardiff|liverpool|sheffield|newcastle|nottingham|"
@@ -118,8 +138,31 @@ _UK_CITY = re.compile(
 
 
 def looks_non_uk(text: str) -> bool:
-    """True when the text clearly names a non-UK location and no UK location (shared by ATS + SERP)."""
-    return bool(_NONUK.search(text or "") and not _UK.search(text or ""))
+    """True when the text clearly names a non-UK location and no UK location (shared by ATS + SERP).
+    An explicit non-UK COUNTRY wins even if a UK-named city is also present (e.g. 'Cambridge, USA')."""
+    t = text or ""
+    if _NONUK_COUNTRY.search(t):
+        return True
+    return bool(_NONUK.search(t) and not _UK.search(t))
+
+
+def ats_uk_ok(location: str) -> bool:
+    """Strict UK gate for STRUCTURED ATS locations (Greenhouse/Lever/Ashby/Workday/etc), where the
+    location field is authoritative - so we REQUIRE a positive UK signal and drop anything foreign.
+    - explicit non-UK country/state  -> drop (even if a UK-named city collides, e.g. 'Cambridge, USA')
+    - a UK signal present             -> keep
+    - remote/flexible with no foreign country -> keep (real UK-remote roles)
+    - anything else specific (e.g. '3 Locations', 'Riga') with no UK signal -> drop (accuracy first)"""
+    loc = (location or "").strip()
+    if not loc:
+        return True                       # unknown location; let the rubric decide (rare)
+    if _NONUK_COUNTRY.search(loc):
+        return False
+    if _UK.search(loc):
+        return True
+    if _REMOTE.search(loc) and not _NONUK.search(loc):
+        return True
+    return False                          # specific but no UK signal -> foreign/ambiguous, drop
 
 
 def _stale_age(text: str) -> bool:
@@ -298,6 +341,10 @@ class BrightDataSerpSource(Source):
     def _company_from_url(link: str) -> str:
         """Authoritative company from the URL slug (LinkedIn '...-at-{company}-{id}', greenhouse/
         lever/ashby org path). Reliable where the SERP title/keyword is not."""
+        if re.search(r"jobs\.nhs\.uk", link, re.I):
+            return "NHS"
+        if re.search(r"civilservicejobs\.service\.gov\.uk", link, re.I):
+            return "Civil Service"
         for pat in (r"/jobs/view/.+?-at-([a-z0-9&'._-]+?)-\d{5,}",
                     r"(?:boards\.|job-boards\.)?greenhouse\.io/([^/]+)/jobs",
                     r"jobs\.lever\.co/([^/]+)/", r"jobs\.ashbyhq\.com/([^/]+)/",
