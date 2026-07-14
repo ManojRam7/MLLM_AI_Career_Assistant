@@ -105,7 +105,7 @@ _NONUK = re.compile(
 # UK-named city is also present (e.g. "Cambridge (USA)", "London, Ontario") - used for structured ATS
 # locations where the country field is authoritative.
 _NONUK_COUNTRY = re.compile(
-    r"\b(united states|u\.?s\.?a\.?|\bu\.?s\.?\b|america|canada|india|ireland|"
+    r"\b(united states|u\.?s\.?a\.?|\bu\.?s\.?\b|america|canada|india|(?<!northern )ireland|"
     r"germany|france|spain|portugal|netherlands|belgium|luxembourg|switzerland|austria|italy|"
     r"poland|romania|hungary|czech|greece|sweden|denmark|norway|finland|"
     r"latvia|lithuania|estonia|ukraine|turkey|israel|"
@@ -346,9 +346,12 @@ class BrightDataSerpSource(Source):
         if re.search(r"civilservicejobs\.service\.gov\.uk", link, re.I):
             return "Civil Service"
         for pat in (r"/jobs/view/.+?-at-([a-z0-9&'._-]+?)-\d{5,}",
-                    r"(?:boards\.|job-boards\.)?greenhouse\.io/([^/]+)/jobs",
-                    r"jobs\.lever\.co/([^/]+)/", r"jobs\.ashbyhq\.com/([^/]+)/",
-                    r"([a-z0-9-]+)\.recruitee\.com"):
+                    r"(?:boards\.|job-boards\.)?greenhouse\.io/([^/?]+)",
+                    r"jobs\.lever\.co/([^/]+)", r"jobs\.ashbyhq\.com/([^/]+)",
+                    r"(?:jobs|careers)\.smartrecruiters\.com/([^/?]+)",
+                    r"apply\.workable\.com/([^/?]+)", r"([a-z0-9-]+)\.workable\.com",
+                    r"([a-z0-9-]+)\.recruitee\.com", r"([a-z0-9-]+)\.eightfold\.ai",
+                    r"([a-z0-9-]+)\.jobs\.personio\.", r"([a-z0-9-]+)\.wd\d+\.myworkdayjobs\.com"):
             m = re.search(pat, link, re.I)
             if m:
                 name = m.group(1).replace("-", " ").replace("_", " ").strip()

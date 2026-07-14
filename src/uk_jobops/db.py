@@ -230,6 +230,15 @@ class Store:
                         "AND source ILIKE %s", ("%Bright Data%",))
             return cur.rowcount
 
+    def wipe_all(self) -> int:
+        """DESTRUCTIVE full reset: delete EVERY job (including tracked + manual) and all run history,
+        for a clean rebuild from scratch. Triggered by run_pipeline --wipe-all (workflow 'wipe' input)."""
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM jobs")
+            n = cur.rowcount
+            cur.execute("DELETE FROM pipeline_runs")
+        return n
+
     def purge_spam(self) -> int:
         """Delete already-stored non-UK / expired / removed postings (title+description+location
         signals). Skips manual and tracked jobs. Idempotent - runs every pass."""

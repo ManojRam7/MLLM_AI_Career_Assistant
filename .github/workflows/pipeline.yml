@@ -21,6 +21,9 @@ on:
       reset:
         description: "set 'true' ONCE to wipe old Bright Data jobs and rebuild clean"
         default: "false"
+      wipe:
+        description: "set 'true' ONCE to DELETE ALL jobs + run history (full reset), then rebuild"
+        default: "false"
 
 permissions:
   contents: read
@@ -59,6 +62,7 @@ jobs:
           python scripts/run_pipeline.py
           --mode "${{ github.event.inputs.mode || 'recurring' }}"
           --sector "${{ github.event.inputs.sector || 'auto' }}"
+          ${{ github.event.inputs.wipe == 'true' && '--wipe-all' || '' }}
           ${{ github.event.inputs.reset == 'true' && '--reset-serp' || '' }}
 
       - name: Upload tailored CVs + digest

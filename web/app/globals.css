@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(99, 102, 241, 0.25), transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, rgba(34, 211, 238, 0.18), transparent 55%),
+    #0b1020;
+  color: #e6e9f5;
+  min-height: 100vh;
+}
+
+.card {
+  @apply bg-panel/80 backdrop-blur border border-line rounded-2xl shadow-card;
+}
+
+.pill {
+  @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+}
+
+.tab {
+  @apply px-4 py-2 rounded-xl text-sm font-medium transition-colors;
+}
+.tab-active {
+  @apply bg-gradient-to-r from-brand to-brand2 text-white shadow-card;
+}
+.tab-idle {
+  @apply text-slate-300 hover:bg-panel2;
+}
+
+/* thin scrollbars for the table */
+.scroll-thin::-webkit-scrollbar { height: 9px; width: 9px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: #2a3358; border-radius: 8px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+
+table.grid th, table.grid td {
+  @apply border-b border-line/70 text-left align-top;
+}

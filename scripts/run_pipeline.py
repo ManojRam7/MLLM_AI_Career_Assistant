@@ -54,10 +54,18 @@ def main() -> None:
                     help="sector name, 'auto' (pick by UTC hour), or 'full' (no sector focus)")
     ap.add_argument("--reset-serp", action="store_true",
                     help="one-time: delete non-tracked Bright Data jobs before the run (clears old spam)")
+    ap.add_argument("--wipe-all", action="store_true",
+                    help="DESTRUCTIVE one-time: delete ALL jobs + run history, then rebuild clean")
     args = ap.parse_args()
     try:
         cfg = load_config()
-        if args.reset_serp and cfg.secrets.supabase_db_url:
+        if args.wipe_all and cfg.secrets.supabase_db_url:
+            from uk_jobops.db import Store
+            _s = Store(cfg.secrets.supabase_db_url)
+            _s.init_schema()
+            print(f"[wipe-all] deleted {_s.wipe_all()} jobs + all run history (full reset)", file=sys.stderr)
+            _s.close()
+        elif args.reset_serp and cfg.secrets.supabase_db_url:
             from uk_jobops.db import Store
             _s = Store(cfg.secrets.supabase_db_url)
             _s.init_schema()
