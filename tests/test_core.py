@@ -20,11 +20,16 @@ def test_filter_and_dedupe():
 
 
 def test_category_classifier():
+    # three categories now: data-science, ai-engineer, data-analysis
     assert job_category("Data Scientist") == "data-science"
-    assert job_category("Machine Learning Engineer") == "data-science"
+    assert job_category("Applied Scientist") == "data-science"
+    assert job_category("Machine Learning Engineer") == "ai-engineer"   # AI/ML build role
+    assert job_category("AI Engineer") == "ai-engineer"
+    assert job_category("LLM Engineer") == "ai-engineer"
     assert job_category("Data Analyst") == "data-analysis"
     assert job_category("Business Intelligence Analyst") == "data-analysis"
-    assert job_category("Data Science Analyst") == "data-science"   # DS signal wins ties
+    assert job_category("Data Science Analyst") == "data-science"   # DS signal beats analyst
+    assert job_category("Machine Learning Data Scientist") == "ai-engineer"  # data+AI mixed -> AI
 
 
 def test_agency_and_spam_filtering():

@@ -18,8 +18,15 @@ search:
     - "junior data scientist"
     - "graduate data scientist"
     - "applied scientist"
+    # --- category 2: AI ENGINEER ---
     - "AI engineer"
-    # --- category 2: DATA ANALYSIS ---
+    - "machine learning engineer"
+    - "LLM engineer"
+    - "generative AI engineer"
+    - "NLP engineer"
+    - "MLOps engineer"
+    - "AI/ML engineer"
+    # --- category 3: DATA ANALYSIS ---
     - "data analyst"
     - "data analytics"
     - "analytics engineer"
@@ -43,8 +50,20 @@ seniority:
     - "junior data scientist"
     - "graduate data scientist"
     - "applied scientist"
-    - "ai engineer"
     - "decision scientist"
+    - "research scientist"
+    # ai engineer
+    - "ai engineer"
+    - "machine learning"
+    - "llm engineer"
+    - "genai engineer"
+    - "generative ai"
+    - "nlp engineer"
+    - "computer vision"
+    - "mlops engineer"
+    - "ai/ml engineer"
+    - "applied ai"
+    - "ai scientist"
     # data analysis
     - "data analyst"
     - "data analytics"
@@ -149,6 +168,9 @@ notify:
   min_fit: 75                    # only send a Telegram alert for jobs at/above this fit
   max_per_run: 10                # cap Telegram messages per run (avoid spam)
   heartbeat: true                # send a short 'run complete' message each run (set false once confirmed working)
+  top_gov_only: true             # alerts ONLY for top employers (data/notify_companies.txt) + government
+  companies_file: "data/notify_companies.txt"   # curated top-employer allowlist (edit freely)
+  gov_sectors: ["Civil Services"]               # sectors treated as government (always alert-worthy)
 
 sources:
   reed: { enabled: true }
@@ -167,15 +189,19 @@ sources:
     civil_service_sectors: ["Civil Services"]   # add civilservicejobs site: queries on this sector's run
     nhs_sectors: ["Insurance & Health"]         # add jobs.nhs.uk site: queries on this sector's run
     linkedin_site: false         # set true to add site:uk.linkedin.com/jobs queries on the broad run
-    extra_queries:               # broad market queries (both categories) - run on the daily full/broad run
+    extra_queries:               # broad market queries (3 categories) - run on the daily full/broad run
+      # data science
       - "data scientist United Kingdom"
-      - "machine learning engineer United Kingdom"
-      - "data analyst United Kingdom"
-      - "data analytics United Kingdom"
-      - "business intelligence analyst United Kingdom"
-      - "analytics engineer United Kingdom"
-      - "AI engineer United Kingdom"
       - "graduate data scientist United Kingdom"
+      # ai engineer
+      - "AI engineer United Kingdom"
+      - "machine learning engineer United Kingdom"
+      - "LLM engineer United Kingdom"
+      - "generative AI engineer United Kingdom"
+      # data analysis
+      - "data analyst United Kingdom"
+      - "analytics engineer United Kingdom"
+      - "business intelligence analyst United Kingdom"
   apify_linkedin:                # cheap STRUCTURED LinkedIn via Apify, filtered by companyName (per-company)
     enabled: false               # OFF - Apify free credits expire after ~12 runs and paid plans are costly.
                                  # We cover companies for free via the expanded ATS layer (careers-page classifier)

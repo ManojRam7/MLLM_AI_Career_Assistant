@@ -50,17 +50,26 @@ _AGENCY_DESC = re.compile(
 def is_agency(company: str, description: str) -> bool:
     return bool(_RECRUITER.search(company or "") or _AGENCY_DESC.search(description or ""))
 
-# Two co-primary job categories, decided on the title. Data-science signals win when
-# both appear (e.g. "data science analyst" -> data-science).
-_DS_CAT = re.compile(r"\b(data scientist|scientist|machine learning|ml engineer|"
-                     r"ai engineer|applied scientist|decision scientist|data science)\b", re.I)
+# THREE co-primary categories, decided on the title. Precedence (matches "data+AI mixed -> AI"):
+#   1) AI/ML build roles      -> ai-engineer   (AI engineer, ML engineer, LLM/GenAI, NLP/CV, MLOps)
+#   2) data-science           -> data scientist / applied / decision / research scientist
+#   3) data-analysis          -> analyst / analytics / BI / insight / MI / reporting
+_AI_CAT = re.compile(r"\b(ai engineer|a\.i\. engineer|ai/ml|ml engineer|mlops|machine learning engineer|"
+                     r"machine learning|deep learning|\bllm\b|llms|gen[- ]?ai|generative ai|"
+                     r"applied ai|ai scientist|nlp engineer|natural language|computer vision|"
+                     r"ai developer|ai/ml engineer|ai research)\b", re.I)
+_DS_CAT = re.compile(r"\b(data scientist|applied scientist|decision scientist|research scientist|"
+                     r"data science|quantitative (?:analyst|researcher)|statistician)\b", re.I)
 _DA_CAT = re.compile(r"\b(data analyst|data analytics|analytics engineer|business intelligence|"
-                     r"bi analyst|insight\w*|reporting analyst|mi analyst|analytics|analyst)\b", re.I)
+                     r"bi analyst|bi developer|insight\w*|reporting analyst|mi analyst|"
+                     r"analytics|analyst)\b", re.I)
 
 
 def job_category(title: str) -> str:
-    """Return 'data-science' | 'data-analysis' | '' from the job title."""
+    """Return 'ai-engineer' | 'data-science' | 'data-analysis' | '' from the job title."""
     t = title or ""
+    if _AI_CAT.search(t):
+        return "ai-engineer"
     if _DS_CAT.search(t):
         return "data-science"
     if _DA_CAT.search(t):

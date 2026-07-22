@@ -156,6 +156,7 @@ class Pipeline:
                    "rejected": len(rejected), "bucket_matches": sum(1 for j in targets if j.in_bucket),
                    "top100_matches": sum(1 for j in targets if j.bucket_tier == "top100"),
                    "category_data_science": sum(1 for j in targets if j.category == "data-science"),
+                   "category_ai_engineer": sum(1 for j in targets if j.category == "ai-engineer"),
                    "category_data_analysis": sum(1 for j in targets if j.category == "data-analysis"),
                    "bucket_only_dropped": bucket_only_dropped,
                    "sources": statuses, "scored": 0, "tailored": 0}
@@ -314,7 +315,16 @@ class Pipeline:
         tg = self.cfg.secrets
         if tg.telegram_bot_token and tg.telegram_chat_id:
             ncfg = self.s.get("notify", {})
-            alerts = store.jobs_to_notify(ncfg.get("min_fit", 75), limit=ncfg.get("max_per_run", 10))
+            max_alerts = ncfg.get("max_per_run", 10)
+            # fetch a larger fresh pool, then keep ONLY top companies + government (no startups)
+            pool = store.jobs_to_notify(ncfg.get("min_fit", 75), limit=max(max_alerts * 8, 40))
+            if ncfg.get("top_gov_only", True):
+                allow = notify.load_notify_allowlist(
+                    self.cfg.path(ncfg.get("companies_file", "data/notify_companies.txt")))
+                govs = ncfg.get("gov_sectors", ["Civil Services"])
+                pool = [a for a in pool
+                        if notify.is_top_or_gov(a.get("company", ""), a.get("sector", ""), allow, govs)]
+            alerts = pool[:max_alerts]
             first_name = (self.s.get("candidate", {}).get("name", "there") or "there").split()[0]
             hb_ok, hb_detail = True, "off"
             if ncfg.get("heartbeat", True):
@@ -328,6 +338,7 @@ class Pipeline:
                       f"scored {summary.get('scored', 0)} · tailored {summary.get('tailored', 0)}\n"
                       + (f"📥 {src_line}\n" if src_line else "")
                       + f"🧭 DS {summary.get('category_data_science', 0)} · "
+                      + f"AI {summary.get('category_ai_engineer', 0)} · "
                       + f"DA {summary.get('category_data_analysis', 0)}\n"
                       + (f"🔎 {summary.get('companies_searched', 0)}/{summary.get('companies_in_sector', '?')} "
                          f"companies searched · {summary.get('companies_with_roles', 0)} with roles\n"

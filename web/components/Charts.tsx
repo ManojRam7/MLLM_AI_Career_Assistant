@@ -83,7 +83,7 @@ export default function Charts({ jobs }: { jobs: Job[] }) {
         </ResponsiveContainer>
       </Panel>
 
-      <Panel title="Data Science vs Data Analysis">
+      <Panel title="By category (DS · AI · DA)">
         <ResponsiveContainer>
           <PieChart>
             <Pie data={byCat} dataKey="value" nameKey="name" innerRadius={55} outerRadius={95} paddingAngle={3}>

@@ -1,0 +1,203 @@
+# Telegram alerts fire ONLY for these employers (plus government — see notify.gov_sectors).
+# One company per line. Matching is fuzzy + whole-word (so "Three" matches "Three UK").
+# Seeded with major UK + global employers; edit freely (add/remove names).
+
+# --- Banking & finance ---
+HSBC
+Barclays
+Lloyds
+Lloyds Banking Group
+NatWest
+Santander
+Standard Chartered
+Goldman Sachs
+JP Morgan
+JPMorgan
+Morgan Stanley
+Citi
+Citigroup
+Bank of America
+Deutsche Bank
+UBS
+Credit Suisse
+BlackRock
+Schroders
+M&G
+Legal & General
+Man Group
+LSEG
+London Stock Exchange
+Bank of England
+FCA
+Financial Conduct Authority
+Revolut
+Monzo
+Starling
+Starling Bank
+Wise
+Nationwide
+Capital One
+American Express
+Mastercard
+Visa
+PayPal
+Worldpay
+GoCardless
+Zopa
+Experian
+Equifax
+
+# --- Insurance & health ---
+Aviva
+Prudential
+AXA
+Allianz
+Zurich
+RSA
+Admiral
+Direct Line
+Bupa
+NHS
+GSK
+GlaxoSmithKline
+AstraZeneca
+Pfizer
+Roche
+Novartis
+Johnson & Johnson
+Sanofi
+Wellcome
+
+# --- Retail & e-commerce ---
+Tesco
+Sainsbury's
+Sainsburys
+Asda
+Morrisons
+Marks & Spencer
+John Lewis
+Waitrose
+Ocado
+ASOS
+Boohoo
+Next
+Currys
+Argos
+Amazon
+eBay
+Trainline
+Deliveroo
+Just Eat
+Just Eat Takeaway
+Dunnhumby
+Kantar
+NielsenIQ
+Tesco Bank
+B&Q
+Kingfisher
+Wickes
+Screwfix
+Boots
+Co-op
+
+# --- Product / tech ---
+Google
+DeepMind
+Microsoft
+Meta
+Apple
+Spotify
+Netflix
+Palantir
+Bloomberg
+Stripe
+Snowflake
+Databricks
+Sky
+Salesforce
+Adobe
+Nvidia
+OpenAI
+Anthropic
+Bumble
+Expedia
+Booking.com
+Trip.com
+Depop
+
+# --- Service / consulting ---
+Accenture
+Deloitte
+PwC
+KPMG
+EY
+Ernst & Young
+Capgemini
+Cognizant
+Infosys
+TCS
+Tata Consultancy Services
+IBM
+Wipro
+HCL
+HCLTech
+Atos
+CGI
+BCG
+McKinsey
+Bain
+
+# --- Energy, transport, manufacturing, telco ---
+BP
+Shell
+National Grid
+Centrica
+SSE
+EDF
+Rolls-Royce
+BAE Systems
+Airbus
+Jaguar Land Rover
+Nissan
+Network Rail
+Transport for London
+TfL
+BT
+BT Group
+Vodafone
+Three
+EE
+O2
+Virgin Media
+Ford
+Siemens
+Unilever
+Diageo
+Reckitt
+Nestle
+Mars
+PepsiCo
+Coca-Cola
+National Highways
+
+# --- Government & public sector ---
+HMRC
+HM Revenue & Customs
+DWP
+Department for Work and Pensions
+DVLA
+DVSA
+Home Office
+Cabinet Office
+DEFRA
+Ministry of Justice
+Ministry of Defence
+Ordnance Survey
+Office for National Statistics
+ONS
+Met Office
+Government Digital Service
+Environment Agency
+Ofgem
+Ofcom
+UK Health Security Agency

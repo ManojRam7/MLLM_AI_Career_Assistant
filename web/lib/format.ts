@@ -20,6 +20,14 @@ export function shortDate(s: string | null): string {
 
 export function categoryLabel(c: string | null): string {
   if (c === "data-science") return "Data Science";
+  if (c === "ai-engineer") return "AI Engineer";
   if (c === "data-analysis") return "Data Analysis";
   return c || "—";
+}
+
+export function categoryBadge(c: string | null): string {
+  if (c === "data-science") return "bg-indigo-500/20 text-indigo-300";
+  if (c === "ai-engineer") return "bg-fuchsia-500/20 text-fuchsia-300";
+  if (c === "data-analysis") return "bg-cyan-500/20 text-cyan-300";
+  return "bg-slate-600/30 text-slate-300";
 }

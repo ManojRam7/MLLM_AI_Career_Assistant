@@ -3,11 +3,55 @@ Send functions return diagnostics so the pipeline can surface *why* Telegram fai
 from __future__ import annotations
 
 import html
+import re
 from pathlib import Path
 
 
 def _e(s) -> str:
     return html.escape(str(s or ""))
+
+
+# Government / public-sector employers always qualify for alerts (independent of the allowlist).
+_GOV = re.compile(r"\b(nhs|hmrc|dwp|dvla|dvsa|gov\.uk|government|civil service|home office|"
+                  r"cabinet office|ministry|department for|council|borough|county|university|"
+                  r"ordnance survey|met office|environment agency|ofgem|ofcom|police|"
+                  r"national health|public health|hm revenue)\b", re.I)
+
+
+def load_notify_allowlist(path: str) -> list[str]:
+    """Load the curated top-employer allowlist (one name per line, '#' comments ignored)."""
+    p = Path(path)
+    if not p.exists():
+        return []
+    out = []
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            out.append(line)
+    return out
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9 ]", " ", (s or "").lower())
+
+
+def is_top_or_gov(company: str, sector: str, allowlist: list[str], gov_sectors: list[str]) -> bool:
+    """True if this employer is a curated top company, or government (by sector or name)."""
+    if sector and any(sector.strip().lower() == g.strip().lower() for g in (gov_sectors or [])):
+        return True
+    if _GOV.search(company or ""):
+        return True
+    c = _norm(company)
+    if not c:
+        return False
+    for entry in allowlist:
+        e = _norm(entry)
+        if not e:
+            continue
+        # whole-word / phrase match either direction ("Three" ~ "Three UK", "Goldman Sachs" ~ "Goldman Sachs Intl")
+        if re.search(rf"\b{re.escape(e)}\b", c) or re.search(rf"\b{re.escape(c)}\b", e):
+            return True
+    return False
 
 
 def write_digest(rows: list[dict], out: str = "output/digest.md") -> str:

@@ -301,8 +301,9 @@ with tab_overview:
         c[3].metric("Tailored", sc["tailored"])
         c[4].metric("Applied", sc["applied"] + sc["interview"] + sc["offer"])
         _ds = int((ov["category"] == "data-science").sum())
+        _ai = int((ov["category"] == "ai-engineer").sum())
         _da = int((ov["category"] == "data-analysis").sum())
-        st.caption(f"🔬 Data Science: **{_ds}**  ·  📈 Data Analysis: **{_da}**  ·  "
+        st.caption(f"🔬 Data Science: **{_ds}**  ·  🤖 AI Engineer: **{_ai}**  ·  📈 Data Analysis: **{_da}**  ·  "
                    f"🟢 strong (≥85): **{int((ov['fit_score'] >= 85).sum())}**")
 
         left, right = st.columns(2)
@@ -401,7 +402,7 @@ with tab_pipeline:
         for _, r in runs.iterrows():
             sj = _sj(r)
             sc = {s.get("source", "?"): s.get("count", 0) for s in sj.get("sources", [])}
-            google = next((v for k, v in sc.items() if "Google" in k), 0)
+            google = next((v for k, v in sc.items() if "Bright Data" in k or "LinkedIn" in k or "Google" in k), 0)
             ats = next((v for k, v in sc.items() if "ATS" in k), 0)
             gov = sum(v for k, v in sc.items() if "NHS" in k or "Civil Service" in k)
             # how many ATS companies were found by FOLLOWING the careers page (the classifier)
@@ -411,9 +412,10 @@ with tab_pipeline:
                 "run": _local(r.get("run_at")), "mode": r.get("mode"),
                 "sector": sj.get("sector", "ALL"),
                 "found": r.get("discovered"), "new": r.get("stored_new"),
-                "Reed": sc.get("Reed", 0), "Adzuna": sc.get("Adzuna", 0), "Google": google,
+                "Reed": sc.get("Reed", 0), "Adzuna": sc.get("Adzuna", 0), "LinkedIn": google,
                 "ATS": ats, "ATS via careers": int(ats_classified or 0), "Gov": gov,
-                "🧭 DS": sj.get("category_data_science", 0), "DA": sj.get("category_data_analysis", 0),
+                "🧭 DS": sj.get("category_data_science", 0), "AI": sj.get("category_ai_engineer", 0),
+                "DA": sj.get("category_data_analysis", 0),
                 "🔎 searched": int(sj.get("companies_searched", 0) or 0),
                 "of": str(sj.get("companies_in_sector", "") or ""),   # str: sector runs int, ALL runs "" (Arrow-safe)
                 "co. w/roles": int(sj.get("companies_with_roles", 0) or 0),
@@ -452,11 +454,14 @@ with tab_pipeline:
 
 # ----------------------------------------------------------------- JOBS (All / DS / DA sub-tabs)
 with tab_jobs:
-    _view = st.radio("View", ["💼 All jobs", "🔬 Data Science", "📈 Data Analysis"],
+    _view = st.radio("View", ["💼 All jobs", "🔬 Data Science", "🤖 AI Engineer", "📈 Data Analysis"],
                      horizontal=True, key="jobs_view", label_visibility="collapsed")
     if _view.startswith("🔬"):
         render_jobs(jobs, url, "jds", "data-science", "🔬 Data Science roles",
-                    "Data Scientist, ML / AI Engineer, Applied / Decision Scientist and similar.")
+                    "Data Scientist, Applied / Decision / Research Scientist and similar.")
+    elif _view.startswith("🤖"):
+        render_jobs(jobs, url, "jai", "ai-engineer", "🤖 AI Engineer roles",
+                    "AI Engineer, ML Engineer, LLM / GenAI, NLP / Computer Vision, MLOps and similar.")
     elif _view.startswith("📈"):
         render_jobs(jobs, url, "jda", "data-analysis", "📈 Data Analysis roles",
                     "Data Analyst, Analytics Engineer, BI / Insight / MI Analyst and similar (incl. civil service).")
@@ -477,6 +482,7 @@ with tab_source:
                    avg_fit=("fit_score", lambda s: round(s[s > 0].mean(), 1) if (s > 0).any() else 0),
                    bucket=("in_bucket", "sum"),
                    DS=("category", lambda s: int((s == "data-science").sum())),
+                   AI=("category", lambda s: int((s == "ai-engineer").sum())),
                    DA=("category", lambda s: int((s == "data-analysis").sum())))
                .reset_index().sort_values("jobs", ascending=False))
         st.dataframe(agg, hide_index=True, width="stretch",
@@ -526,12 +532,15 @@ with tab_board:
         st.caption("Separate boards for close monitoring. Change a card's stage, tick **🗑 delete**, "
                    "then **Save board**.")
         _nds = int((tracked["category"] == "data-science").sum())
+        _nai = int((tracked["category"] == "ai-engineer").sum())
         _nda = int((tracked["category"] == "data-analysis").sum())
         _board = st.radio("Board", [f"🗂 All ({len(tracked)})", f"🔬 Data Science ({_nds})",
-                                    f"📈 Data Analysis ({_nda})"],
+                                    f"🤖 AI Engineer ({_nai})", f"📈 Data Analysis ({_nda})"],
                           horizontal=True, key="board_view", label_visibility="collapsed")
         if _board.startswith("🔬"):
             render_kanban(tracked[tracked["category"] == "data-science"], url, "ds")
+        elif _board.startswith("🤖"):
+            render_kanban(tracked[tracked["category"] == "ai-engineer"], url, "ai")
         elif _board.startswith("📈"):
             render_kanban(tracked[tracked["category"] == "data-analysis"], url, "da")
         else:
@@ -547,7 +556,7 @@ with tab_cvs:
         st.info("No recommendations yet. The pipeline writes these for the highest-fit jobs each run "
                 "(fit ≥ tailor threshold). Run the pipeline, then refresh.")
     else:
-        cat_pick = st.multiselect("Category", ["data-science", "data-analysis"], key="rec_cat")
+        cat_pick = st.multiselect("Category", ["data-science", "ai-engineer", "data-analysis"], key="rec_cat")
         rows = [r for r in recs if not cat_pick or r.get("category") in cat_pick]
         st.caption(f"{len(rows)} of {len(recs)} shown.")
         for r in rows:

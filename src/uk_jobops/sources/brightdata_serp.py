@@ -197,7 +197,7 @@ def _is_job(url: str, title: str) -> bool:
 
 
 class BrightDataSerpSource(Source):
-    name = "Google (Bright Data)"
+    name = "LinkedIn (Bright Data)"      # SERP scoped to linkedin.com/jobs (+ reed) — LinkedIn-first
 
     def __init__(self, api_key, zone="serp", *, sector=None, run_broad=True,
                  extra_queries=None, site_queries=None, search_domains=None,
@@ -246,23 +246,24 @@ class BrightDataSerpSource(Source):
                     break
                 jobs.extend(found)
 
-        # 2) per-company: EVERY company in the sector. Search the company's OWN careers site
-        #    (site:), biased to UK; the code-level _reject() then drops any non-UK/expired result.
+        # 2) per-company: for EVERY (non-ATS) company in the sector, search LinkedIn for that
+        #    employer's live roles. LinkedIn is where UK DS/AI/DA jobs really surface (Google was
+        #    weak + burned credits), and the LinkedIn URL slug gives an authoritative company name.
+        #    ATS companies are already covered for free by ATSSource, so this only hits the rest.
         queried = with_roles = 0
         with_roles_names: list[str] = []
-        cats = ("(data scientist OR data analyst OR analytics OR machine learning OR data engineer) "
-                "(United Kingdom OR London OR UK OR England OR Scotland OR Wales)")
+        cats = ("(data scientist OR data analyst OR AI engineer OR machine learning OR analytics OR "
+                "\"AI engineer\" OR \"ML engineer\") (United Kingdom OR London OR UK OR England OR Scotland OR Wales)")
         for entry in self.companies:
             name, curl = entry if isinstance(entry, (tuple, list)) else (entry, "")
-            site = _site_of(curl)
-            q = f"site:{site} {cats}" if site else f'"{name}" {cats}'
-            data = self._serp(q, start=0, fresh="m")        # past month (career pages re-index slower)
+            q = f'site:linkedin.com/jobs "{name}" {cats}'    # LinkedIn, not the company's own site
+            data = self._serp(q, start=0, fresh="m")         # past month (freshness; _reject drops expired)
             calls += 1
             queried += 1
             if data is None:
                 errors += 1
                 continue
-            found = self._extract(data, q, name, site.split("/")[0] if site else "")
+            found = self._extract(data, q, name, "")
             if found:
                 with_roles += 1
                 with_roles_names.append(name)

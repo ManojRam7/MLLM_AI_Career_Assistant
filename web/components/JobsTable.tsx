@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import type { Job } from "@/lib/types";
-import { categoryLabel, fitColor, jobLocation, shortDate } from "@/lib/format";
+import { categoryBadge, categoryLabel, fitColor, jobLocation, shortDate } from "@/lib/format";
 
 type ColKey = "fit" | "title" | "company" | "category" | "sector" | "location" | "source" | "added";
 type Kind = "num" | "text" | "enum";
@@ -182,7 +182,7 @@ export default function JobsTable({ jobs }: { jobs: Job[] }) {
                   </td>
                   <td className="px-3 py-2 text-slate-200">{j.company || "—"}</td>
                   <td className="px-3 py-2">
-                    <span className={`pill ${j.category === "data-science" ? "bg-indigo-500/20 text-indigo-300" : "bg-cyan-500/20 text-cyan-300"}`}>
+                    <span className={`pill ${categoryBadge(j.category)}`}>
                       {categoryLabel(j.category)}
                     </span>
                   </td>

@@ -33,6 +33,8 @@ _ATS_LINK = re.compile(
     r"|[A-Za-z0-9_-]+\.recruitee\.com"
     r"|[A-Za-z0-9_-]+\.eightfold\.ai"
     r"|[A-Za-z0-9_-]+\.jobs\.personio\.(?:com|de)"
+    r"|[A-Za-z0-9_-]+\.breezy\.hr"
+    r"|[A-Za-z0-9_-]+\.teamtailor\.com"
     r"|[A-Za-z0-9-]+\.wd\d+\.myworkdayjobs\.com/[^\s\"'<>)]+"
     r")", re.I)
 # Greenhouse/Ashby often load the board via a JS embed that only names the org token.
@@ -56,6 +58,8 @@ def detect_ats(url: str) -> tuple[str, str] | None:
         (r"://([A-Za-z0-9_-]+)\.recruitee\.com", "recruitee"),
         (r"://([A-Za-z0-9_-]+)\.eightfold\.ai", "eightfold"),
         (r"://([A-Za-z0-9_-]+)\.jobs\.personio\.(?:com|de)", "personio"),
+        (r"://([A-Za-z0-9_-]+)\.breezy\.hr", "breezy"),
+        (r"://([A-Za-z0-9_-]+)\.teamtailor\.com", "teamtailor"),
     ]:
         m = re.search(pat, u, re.I)
         if m:
@@ -261,6 +265,42 @@ class ATSSource(Source):
                                location=it.get("location", "") or "United Kingdom",
                                url=it.get("canonicalPositionUrl") or it.get("positionUrl") or "",
                                description=it.get("job_description", "") or "", source=self.name).finalize())
+        elif ats == "breezy":
+            # Breezy exposes a free public JSON feed with a real location per role.
+            r = requests.get(f"https://{token}.breezy.hr/json", timeout=30, headers=_UA)
+            r.raise_for_status()
+            payload = r.json()
+            for it in payload if isinstance(payload, list) else []:
+                loc = it.get("location") or {}
+                country = loc.get("country")
+                country = country.get("name") if isinstance(country, dict) else country
+                locstr = loc.get("name") or ", ".join(x for x in [loc.get("city"), country] if x)
+                out.append(Job(title=it.get("name", ""), company=company,
+                               location=locstr or "", url=it.get("url") or "",
+                               description=it.get("description", "") or "",
+                               posted_date=str(it.get("published_date", "")), source=self.name).finalize())
+        elif ats == "teamtailor":
+            # Teamtailor's API needs a key, but each careers page embeds JSON-LD JobPosting blocks
+            # (title + jobLocation) - parse those (free, structured, real location).
+            import json as _json
+            r = requests.get(f"https://{token}.teamtailor.com/jobs", timeout=20, headers=_UA)
+            r.raise_for_status()
+            for block in re.findall(r'<script[^>]+application/ld\+json[^>]*>(.*?)</script>', r.text, re.S):
+                try:
+                    data = _json.loads(block.strip())
+                except ValueError:
+                    continue
+                items = data if isinstance(data, list) else [data]
+                for it in items:
+                    if not isinstance(it, dict) or it.get("@type") != "JobPosting":
+                        continue
+                    addr = ((it.get("jobLocation") or {}).get("address") or {}) if isinstance(it.get("jobLocation"), dict) else {}
+                    locstr = ", ".join(x for x in [addr.get("addressLocality"), addr.get("addressRegion"),
+                                                   addr.get("addressCountry")] if x)
+                    out.append(Job(title=it.get("title", ""), company=company, location=locstr,
+                                   url=it.get("url") or f"https://{token}.teamtailor.com/jobs",
+                                   description="", posted_date=str(it.get("datePosted", "")),
+                                   source=self.name).finalize())
         elif ats == "personio":
             import xml.etree.ElementTree as ET
             r = requests.get(f"https://{token}.jobs.personio.com/xml", timeout=30, headers=_UA)
