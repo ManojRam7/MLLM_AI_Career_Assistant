@@ -66,7 +66,8 @@ class Pipeline:
                 max_wait=li.get("max_wait", 480), max_age_days=li.get("max_age_days", 30)))
 
         bd = src_cfg.get("brightdata", {})
-        if bd.get("enabled") and sec.brightdata_api_key:
+        if bd.get("enabled"):     # ALWAYS add when enabled; the source reports 'skipped (no key)' if the
+                                  # BRIGHTDATA_API_KEY is missing -> you can SEE it's not connected in the logs
             from .bucketlist import companies_in_sector
             from .sources.ats import detect_ats
             from .sources.brightdata_serp import BrightDataSerpSource
@@ -345,6 +346,10 @@ class Pipeline:
                          if sector else
                          f"🔎 {summary.get('companies_searched', 0)} companies searched\n")
                       + f"{len(alerts)} new alerts below")
+                # connectivity warnings so you can SEE at a glance if a key isn't wired
+                src_cfg = self.s.get("sources", {})
+                if src_cfg.get("brightdata", {}).get("enabled") and not tg.brightdata_api_key:
+                    hb += "\n⚠️ BRIGHTDATA_API_KEY not set — LinkedIn (Bright Data) is OFF"
                 if summary.get("llm_note"):
                     hb += f"\n⚠️ {summary['llm_note']}"
                 hb_ok, hb_detail = notify.send_message(tg.telegram_bot_token, tg.telegram_chat_id, hb)
