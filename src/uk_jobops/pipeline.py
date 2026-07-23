@@ -21,7 +21,7 @@ class Pipeline:
         self.cfg = cfg
         self.s = cfg.settings
 
-    def _sources(self, sector: str | None = None, run_broad: bool = True):
+    def _sources(self, sector: str | None = None, run_broad: bool = True, all_companies: bool = False):
         sec = self.cfg.secrets
         src_cfg = self.s.get("sources", {})
         bucket_path = self.s.get("bucket_list", {}).get("path", "data/companies_master.csv")
@@ -77,7 +77,15 @@ class Pipeline:
             # sector run => every company. Companies whose careers page is a known ATS are handled by
             # ATSSource (structured, real UK location); SERP only searches the REST (no double-search,
             # saves credits). Broad run => market queries only.
-            _all = companies_in_sector(self.cfg.path(bucket_path), sector) if sector else []
+            # all_companies (daily 4am run) -> per-company search for EVERY company; sector run -> that
+            # sector; pure broad -> none. ATS-detectable companies are covered free by ATSSource, so
+            # SERP only hits the rest (no double-search, saves credits).
+            if all_companies:
+                _all = companies_in_sector(self.cfg.path(bucket_path), None)
+            elif sector:
+                _all = companies_in_sector(self.cfg.path(bucket_path), sector)
+            else:
+                _all = []
             companies = [(n, u) for (n, u) in _all if not detect_ats(u)]
             out.append(BrightDataSerpSource(
                 sec.brightdata_api_key, sec.brightdata_serp_zone,
@@ -86,7 +94,7 @@ class Pipeline:
                 site_queries=self._gov_site_queries(sector, run_broad, bd),
                 search_domains=_domains, companies=companies,
                 max_queries=bd.get("max_queries", 20), pages=bd.get("pages", 1),
-                country=bd.get("country", "gb")))
+                country=bd.get("country", "gb"), company_batch=bd.get("company_batch", 5)))
         return out
 
     def _gov_site_queries(self, sector, run_broad, bd) -> list[str]:
@@ -104,10 +112,11 @@ class Pipeline:
             q += [f"site:uk.linkedin.com/jobs {c} United Kingdom" for c in cats]
         return q
 
-    def discover(self, recency_days: int, sector: str | None = None, run_broad: bool = True):
+    def discover(self, recency_days: int, sector: str | None = None, run_broad: bool = True,
+                 all_companies: bool = False):
         search = self.s.get("search", {})
         jobs, statuses = [], []
-        for src in self._sources(sector, run_broad):
+        for src in self._sources(sector, run_broad, all_companies):
             res = src.fetch(queries=search.get("queries", []), locations=search.get("locations", []),
                             recency_days=recency_days, limit=search.get("max_per_source", 100))
             jobs.extend(res.jobs)
@@ -115,7 +124,7 @@ class Pipeline:
                              "message": res.message, "meta": res.meta})
         return jobs, statuses
 
-    def run(self, mode: str = "recurring", sector: str | None = None) -> dict:
+    def run(self, mode: str = "recurring", sector: str | None = None, all_companies: bool = False) -> dict:
         search = self.s.get("search", {})
         recency = search.get("recency_days_first", 14) if mode == "first" else search.get("recency_days_recurring", 1)
         scoring = self.s.get("scoring", {})
@@ -123,11 +132,12 @@ class Pipeline:
         rot = self.s.get("rotation", {})
         sectors = rot.get("sectors", [])
         broad_index = rot.get("broad_on_index", -1)
-        # A dedicated daily 'full' run (sector=None) does the broad market sweep (Reed/Adzuna +
-        # broad SERP + gov + LinkedIn). The 7 sector runs focus purely on their sector's companies
-        # (ATS + per-company SERP), unless a sector is explicitly the designated broad index.
-        run_broad = True if not (sector and sector in sectors) else (sectors.index(sector) == broad_index)
-        raw, statuses = self.discover(recency, sector=sector, run_broad=run_broad)
+        # all_companies (the single daily 4am run) does EVERYTHING: broad market (Reed/Adzuna + broad
+        # LinkedIn + gov) AND per-company search across every company. Otherwise a 'full' run (sector=
+        # None) does the broad sweep and a sector run focuses on that sector.
+        run_broad = True if all_companies else \
+            (True if not (sector and sector in sectors) else (sectors.index(sector) == broad_index))
+        raw, statuses = self.discover(recency, sector=sector, run_broad=run_broad, all_companies=all_companies)
         normalize(raw)
         sen = self.s.get("seniority", {})
         targets, rejected = apply_filters(raw, sen.get("include", []), sen.get("exclude_title", []),
@@ -152,7 +162,8 @@ class Pipeline:
             targets = [j for j in targets if j.in_bucket]
             bucket_only_dropped = _before - len(targets)
 
-        summary = {"mode": mode, "sector": sector or "ALL", "run_broad": run_broad,
+        summary = {"mode": mode, "sector": ("ALL (every company)" if all_companies else (sector or "ALL")),
+                   "run_broad": run_broad,
                    "discovered": len(raw), "targets": len(targets),
                    "rejected": len(rejected), "bucket_matches": sum(1 for j in targets if j.in_bucket),
                    "top100_matches": sum(1 for j in targets if j.bucket_tier == "top100"),
@@ -177,6 +188,10 @@ class Pipeline:
             summary["companies_searched"] = _bd_meta.get("companies_queried", 0)
             summary["companies_with_roles"] = _bd_meta.get("companies_with_roles", 0)
             summary["companies_with_roles_names"] = _bd_meta.get("with_roles_names", [])
+            if all_companies:
+                from .bucketlist import companies_in_sector
+                summary["companies_in_sector"] = len(companies_in_sector(
+                    self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_master.csv")), None))
 
         # snapshot for offline inspection
         Path("output").mkdir(exist_ok=True)
@@ -366,5 +381,5 @@ class Pipeline:
         return summary
 
 
-def run(mode: str = "recurring", sector: str | None = None) -> dict:
-    return Pipeline(load_config()).run(mode, sector)
+def run(mode: str = "recurring", sector: str | None = None, all_companies: bool = False) -> dict:
+    return Pipeline(load_config()).run(mode, sector, all_companies=all_companies)

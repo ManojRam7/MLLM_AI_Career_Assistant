@@ -201,7 +201,7 @@ class BrightDataSerpSource(Source):
 
     def __init__(self, api_key, zone="serp", *, sector=None, run_broad=True,
                  extra_queries=None, site_queries=None, search_domains=None,
-                 companies=None, max_queries=22, pages=1, country="gb"):
+                 companies=None, max_queries=22, pages=1, country="gb", company_batch=5):
         self.api_key = api_key
         self.zone = zone or "serp"
         self.sector = sector
@@ -209,10 +209,11 @@ class BrightDataSerpSource(Source):
         self.extra_queries = list(extra_queries or [])
         self.site_queries = list(site_queries or [])
         self.search_domains = list(search_domains or ["uk.linkedin.com/jobs", "www.reed.co.uk/jobs"])
-        self.companies = list(companies or [])       # per-company search targets (sector run = ALL)
+        self.companies = list(companies or [])       # per-company search targets (all non-ATS companies)
         self.max_queries = max_queries               # caps only the broad market queries
         self.pages = max(1, pages)
         self.country = country
+        self.company_batch = max(1, company_batch)   # companies' careers sites grouped per SERP query
         self._first_error = ""
 
     def _board_filter(self) -> str:
@@ -246,27 +247,35 @@ class BrightDataSerpSource(Source):
                     break
                 jobs.extend(found)
 
-        # 2) per-company: for EVERY (non-ATS) company in the sector, search LinkedIn for that
-        #    employer's live roles. LinkedIn is where UK DS/AI/DA jobs really surface (Google was
-        #    weak + burned credits), and the LinkedIn URL slug gives an authoritative company name.
-        #    ATS companies are already covered for free by ATSSource, so this only hits the rest.
+        # 2) per-company: search EVERY (non-ATS) company on its OWN careers site. This reliably
+        #    catches named employers (e.g. NEXT -> site:careers.next.co.uk) that a LinkedIn
+        #    name-search misses because the name is a common word. Careers domains are BATCHED
+        #    (~N per Google query) to keep credits low. Broad LinkedIn (above) covers the market.
         queried = with_roles = 0
         with_roles_names: list[str] = []
-        cats = ("(data scientist OR data analyst OR AI engineer OR machine learning OR analytics OR "
-                "\"AI engineer\" OR \"ML engineer\") (United Kingdom OR London OR UK OR England OR Scotland OR Wales)")
-        for entry in self.companies:
-            name, curl = entry if isinstance(entry, (tuple, list)) else (entry, "")
-            q = f'site:linkedin.com/jobs "{name}" {cats}'    # LinkedIn, not the company's own site
-            data = self._serp(q, start=0, fresh="m")         # past month (freshness; _reject drops expired)
+        cats = ("(data scientist OR data analyst OR AI engineer OR machine learning engineer OR "
+                "analytics engineer OR data analytics OR machine learning OR data science) "
+                "(United Kingdom OR London OR UK OR England OR Scotland OR Wales)")
+        with_dom = [(n, _site_of(u)) for (n, u) in
+                    (e if isinstance(e, (tuple, list)) else (e, "") for e in self.companies)]
+        with_dom = [(n, d) for (n, d) in with_dom if d]
+        bs = self.company_batch
+        for i in range(0, len(with_dom), bs):
+            batch = with_dom[i:i + bs]
+            domain_map = {d.split("/")[0]: n for (n, d) in batch}     # careers host -> company name
+            sites = " OR ".join(f"site:{d}" for (_, d) in batch)
+            q = f"({sites}) {cats}"
+            data = self._serp(q, start=0, fresh="m")                 # past month; _reject drops expired
             calls += 1
-            queried += 1
+            queried += len(batch)
             if data is None:
                 errors += 1
                 continue
-            found = self._extract(data, q, name, "")
+            found = self._extract(data, q, domain_map=domain_map)
             if found:
-                with_roles += 1
-                with_roles_names.append(name)
+                got = {j.company for j in found if j.company}
+                with_roles += len(got)
+                with_roles_names.extend(got)
                 jobs.extend(found)
 
         seen, uniq = set(), []
@@ -308,10 +317,15 @@ class BrightDataSerpSource(Source):
                 self._first_error = str(exc)[:100]
             return None
 
-    def _extract(self, data, query: str, company_hint: str, company_domain: str = "") -> list[Job]:
+    def _extract(self, data, query: str, company_hint: str = "", company_domain: str = "",
+                 domain_map: dict | None = None) -> list[Job]:
+        """Parse organic results into jobs. `domain_map` {careers_host: company_name} is used for
+        BATCHED per-company queries (several companies' own careers sites in one `site:` query):
+        each result is attributed to whichever company's domain it belongs to (on_own = True)."""
         out: list[Job] = []
         if not isinstance(data, dict):
             return out
+        dmap = {d.lower().replace("www.", ""): n for d, n in (domain_map or {}).items()}
         for it in data.get("organic", []) or []:
             if not isinstance(it, dict):
                 continue
@@ -320,8 +334,14 @@ class BrightDataSerpSource(Source):
             if not title or not link or not _is_job(link, title):
                 continue
             host = urlparse(link).netloc.lower().replace("www.", "")
+            hint = company_hint
             on_own = bool(company_domain and host == company_domain.lower().replace("www.", ""))
-            # WHITELIST: only a trusted UK/ATS host, or this company's OWN careers domain
+            if dmap:                                   # batched: match the result host to a company
+                for d, nm in dmap.items():
+                    if host == d or host.endswith("." + d) or (len(d) >= 6 and d in host):
+                        on_own, hint = True, nm
+                        break
+            # WHITELIST: only a trusted UK/ATS host, or one of the queried companies' OWN domains
             if not (_TRUSTED.search(host) or on_own):
                 continue
             if _reject(title, desc, link):            # drop expired / stale / clearly-non-UK
@@ -332,7 +352,7 @@ class BrightDataSerpSource(Source):
                 continue
             # company name: prefer the AUTHORITATIVE url slug (LinkedIn/greenhouse/lever), then the
             # site: query's company, then title parsing. Fixes 'Capgemini shown as Hugging Face' etc.
-            company = self._company_from_url(link) or (company_hint if on_own else "") or self._company_from(title)
+            company = self._company_from_url(link) or (hint if on_own else "") or self._company_from(title)
             out.append(Job(title=self._clean_title(title), company=company,
                            location=_uk_location(title, desc), url=link, description=desc,
                            source=self.name, source_query=query).finalize())

@@ -184,6 +184,7 @@ sources:
       - "uk.linkedin.com/jobs"
       - "www.reed.co.uk/jobs"
     top_companies_per_run: 5     # rotating per-company sample for the active sector (DS + DA each)
+    company_batch: 5             # careers-sites grouped per Google query (higher = fewer credits, less depth)
     max_queries: 22              # broad + gov/site + per-company, capped for credit control
     gov_queries: ["data analyst", "data scientist", "data engineer"]
     civil_service_sectors: ["Civil Services"]   # add civilservicejobs site: queries on this sector's run

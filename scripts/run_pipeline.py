@@ -71,8 +71,11 @@ def main() -> None:
             _s.init_schema()
             print(f"[reset-serp] deleted {_s.reset_serp()} old Bright Data rows", file=sys.stderr)
             _s.close()
-        sector = _resolve_sector(args.sector, cfg)
-        print(json.dumps(run(args.mode, sector), indent=2, default=str))
+        if (args.sector or "").lower() == "all":       # single daily run: EVERY company + broad
+            print(json.dumps(run(args.mode, sector=None, all_companies=True), indent=2, default=str))
+        else:
+            sector = _resolve_sector(args.sector, cfg)
+            print(json.dumps(run(args.mode, sector), indent=2, default=str))
     except ConfigError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         raise SystemExit(1)

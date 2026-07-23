@@ -1,23 +1,18 @@
 name: jobops-pipeline
 
 on:
-  schedule:                     # daily broad sweep + one sector per run (UTC). --sector auto maps hour->run
-    - cron: "10 5 * * *"        # FULL broad market sweep (Reed/Adzuna + broad SERP + gov + LinkedIn)
-    - cron: "10 7 * * *"        # Civil Services
-    - cron: "10 9 * * *"        # Banking
-    - cron: "10 11 * * *"       # Retail & E-Com
-    - cron: "10 13 * * *"       # Product Based-Tech Companies
-    - cron: "10 15 * * *"       # Insurance & Health
-    - cron: "10 17 * * *"       # Energy Transport and Manufact
-    - cron: "10 19 * * *"       # Service Based Tech companies
+  schedule:
+    # ONE daily run at 03:00 UTC = 4 AM UK (BST). Covers EVERY company + broad market in a single
+    # steady pass (GitHub cron is UTC and can't auto-adjust for DST; in winter this is 3 AM GMT).
+    - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
       mode:
         description: "first (2-week backfill) or recurring (last day)"
         default: "recurring"
       sector:
-        description: "sector name, 'auto' (by UTC hour), or 'full' (all sources, no focus)"
-        default: "auto"
+        description: "'all' (every company, default daily run), a sector name, 'auto', or 'full'"
+        default: "all"
       reset:
         description: "set 'true' ONCE to wipe old Bright Data jobs and rebuild clean"
         default: "false"
@@ -31,7 +26,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 55        # every-company sector runs make ~150-260 SERP calls
+    timeout-minutes: 120       # the single daily all-company run is a long, steady pass
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -61,7 +56,7 @@ jobs:
         run: >-
           python scripts/run_pipeline.py
           --mode "${{ github.event.inputs.mode || 'recurring' }}"
-          --sector "${{ github.event.inputs.sector || 'auto' }}"
+          --sector "${{ github.event.inputs.sector || 'all' }}"
           ${{ github.event.inputs.wipe == 'true' && '--wipe-all' || '' }}
           ${{ github.event.inputs.reset == 'true' && '--reset-serp' || '' }}
 

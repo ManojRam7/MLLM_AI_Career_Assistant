@@ -91,7 +91,13 @@ def load_jobs(url: str) -> pd.DataFrame:
     # posted date (from the board) + when we first fetched it (new vs old)
     df["posted"] = (df["posted_date"] if "posted_date" in df else blank).fillna("").astype(str).str[:10]
     fs = (df["first_seen_at"] if "first_seen_at" in df else blank).fillna("").astype(str)
-    df["fetched"] = fs.str[:16].str.replace("T", " ", regex=False)
+    # stored UTC -> show UK local time (Europe/London) so 'fetched' reads as present time
+    _ts = pd.to_datetime(fs, utc=True, errors="coerce")
+    try:
+        _ts = _ts.dt.tz_convert("Europe/London")
+    except Exception:
+        pass
+    df["fetched"] = _ts.dt.strftime("%Y-%m-%d %H:%M").fillna("")
     cutoff = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=1)).replace(microsecond=0).isoformat()
     df["new"] = fs.ge(cutoff) & (fs != "")
     return df
@@ -228,7 +234,7 @@ def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
             "new": st.column_config.CheckboxColumn("🆕"),
             "locations": st.column_config.TextColumn("locations", width="medium"),
             "posted": st.column_config.TextColumn("posted", width="small"),
-            "fetched": st.column_config.TextColumn("fetched (UTC)", width="small"),
+            "fetched": st.column_config.TextColumn("fetched (UK)", width="small"),
             "fit": st.column_config.NumberColumn("fit", format="%d", width="small"),
             "url": st.column_config.LinkColumn("link", display_text="open")})
 
