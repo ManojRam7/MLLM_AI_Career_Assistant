@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import csv
 import random
+import re
 from pathlib import Path
 
 _STOP = {"uk", "ltd", "limited", "plc", "group", "europe", "international", "the",
@@ -12,8 +13,12 @@ _STOP = {"uk", "ltd", "limited", "plc", "group", "europe", "international", "the
 
 
 def _core(s: str) -> str:
-    """Normalised name with trailing stop-words (UK, Group, Ltd...) removed."""
-    words = [w for w in (s or "").lower().replace("&", " ").split() if w.isalnum()]
+    """Normalised name with trailing stop-words (UK, Group, Ltd...) removed. Strips punctuation
+    WITHIN words too, so Moody's -> moodys, Rolls-Royce -> rollsroyce, Checkout.com -> checkoutcom
+    (otherwise apostrophe/dot/hyphen names normalise to empty and never match)."""
+    s = (s or "").lower().replace("&", " ")
+    words = [re.sub(r"[^a-z0-9]", "", w) for w in s.split()]
+    words = [w for w in words if w]
     while words and words[-1] in _STOP:
         words.pop()
     return "".join(words)

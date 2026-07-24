@@ -1,0 +1,40 @@
+name: audit-ats-urls
+
+# One-off / occasional: follows every company's careers page, detects its real ATS board, and
+# repoints data/companies_master.csv to the free ATS API URL. Converts companies from paid Bright
+# Data SERP (with ~1-day index lag) to FREE, real-time ATS pulls. Run manually from the Actions tab.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "set 'true' to preview conversions without committing"
+        default: "false"
+
+permissions:
+  contents: write        # so it can commit the repointed CSV back
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests
+      - name: Run ATS audit
+        run: python scripts/audit_ats.py ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+      - name: Commit repointed URLs
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- data/companies_master.csv; then
+            git add data/companies_master.csv
+            git commit -m "audit: repoint careers URLs to free ATS boards"
+            git push
+          else
+            echo "No URL changes to commit."
+          fi

@@ -12,8 +12,9 @@ search:
   queries:
     # --- category 1: DATA SCIENCE ---
     - "data scientist"
-    - "machine learning engineer"
     - "marketing data scientist"
+    - "marketing mix modelling"
+    - "marketing science"
     - "associate data scientist"
     - "junior data scientist"
     - "graduate data scientist"
@@ -44,8 +45,9 @@ seniority:
   include:                       # role must match one of these (on the TITLE); covers BOTH categories
     # data science
     - "data scientist"
-    - "machine learning engineer"
-    - "ml engineer"
+    - "marketing data scientist"
+    - "marketing mix"
+    - "marketing science"
     - "associate data scientist"
     - "junior data scientist"
     - "graduate data scientist"
@@ -55,6 +57,8 @@ seniority:
     # ai engineer
     - "ai engineer"
     - "machine learning"
+    - "machine learning engineer"
+    - "ml engineer"
     - "llm engineer"
     - "genai engineer"
     - "generative ai"
@@ -155,6 +159,37 @@ seniority:
     - "IT Online Learning"
     - "FDM Group"
     - "AMS Contingent"
+    # agencies/aggregators seen slipping through (name-based, not caught by the keyword filter)
+    - "Hunter Bond"
+    - "Robert Walters"
+    - "Anson Mccade"
+    - "Morson"
+    - "Investigo"
+    - "Hydrogen Group"
+    - "Polaris Consulting"
+    - "Gazelle Global Consulting"
+    - "Alexander Mann Solutions"
+    - "Milburn Lewis"
+    - "Adroit People"
+    - "Sellick Partnership"
+    - "N Consulting"
+    - "Fraser & Co"
+    - "Humand"
+    - "Wave Search"
+    - "Sure Exec Search"
+    - "Cititec"
+    - "Airswift"
+    - "Hackajob"
+    - "HackerEarth"
+    - "Jobright"
+    - "Free Work"
+    - "Tiptopjob"
+    - "Targetjobs"
+    - "Why Hiring"
+    - "Hire Feed"
+    - "Netrolynx"
+    - "SoTalent"
+    - "SustainRecruit"
 
 scoring:
   tailor_threshold: 70           # only tailor a CV when fit score >= this (saves tokens)
@@ -170,7 +205,7 @@ notify:
   heartbeat: true                # send a short 'run complete' message each run (set false once confirmed working)
   top_gov_only: true             # alerts ONLY for top employers (data/notify_companies.txt) + government
   companies_file: "data/notify_companies.txt"   # curated top-employer allowlist (edit freely)
-  gov_sectors: ["Civil Services"]               # sectors treated as government (always alert-worthy)
+  gov_sectors: ["Government & Public Sector"]   # sectors treated as government (always alert-worthy)
 
 sources:
   reed: { enabled: true }
@@ -187,8 +222,8 @@ sources:
     company_batch: 5             # careers-sites grouped per Google query (higher = fewer credits, less depth)
     max_queries: 22              # broad + gov/site + per-company, capped for credit control
     gov_queries: ["data analyst", "data scientist", "data engineer"]
-    civil_service_sectors: ["Civil Services"]   # add civilservicejobs site: queries on this sector's run
-    nhs_sectors: ["Insurance & Health"]         # add jobs.nhs.uk site: queries on this sector's run
+    civil_service_sectors: ["Government & Public Sector"]   # civilservicejobs site: queries on this sector's run
+    nhs_sectors: ["Insurance, Health & Pharma"]             # jobs.nhs.uk site: queries on this sector's run
     linkedin_site: false         # set true to add site:uk.linkedin.com/jobs queries on the broad run
     extra_queries:               # broad market queries (3 categories) - run on the daily full/broad run
       # data science
@@ -234,14 +269,14 @@ bucket_list:
 
 rotation:                        # one sector per scheduled run; all 7 covered once/day with time gaps
   enabled: true
-  sectors:                       # order maps to schedule_hours_utc below (index 0 also does the broad sweep)
-    - "Civil Services"
-    - "Banking"
-    - "Retail & E-Com"
-    - "Product Based-Tech Companies"
-    - "Insurance & Health"
-    - "Energy Transport and Manufact"
-    - "Service Based Tech companies"
+  sectors:                       # the 7 Master-List sectors (the daily run covers ALL of them at once)
+    - "Financial Services"
+    - "Technology & Telecoms"
+    - "Consulting & IT Services"
+    - "Retail, Consumer & Media"
+    - "Insurance, Health & Pharma"
+    - "Energy, Transport & Industrial"
+    - "Government & Public Sector"
   schedule_hours_utc: [7, 9, 11, 13, 15, 17, 19]   # `--sector auto` maps the current UTC hour -> sector
   broad_hour_utc: 5              # a dedicated daily FULL/broad run (all sources, no sector focus) at this hour
   broad_on_index: -1             # -1 = no sector run does the broad sweep (only the dedicated full run does)

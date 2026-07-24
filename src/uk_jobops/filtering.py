@@ -16,14 +16,21 @@ _SPAM = re.compile(
     r"course|academy|re[-\s]?train)\b", re.I)
 
 
+_SENIOR_OK = {"senior", "sr", "lead"}   # allowed for DATA ANALYST roles (candidate targets senior/lead DA)
+
+
 def classify(title: str, include: list[str], exclude_title: list[str]) -> tuple[bool, str]:
     """Return (is_target, seniority_label). Decisions are made on the TITLE only."""
     t = title or ""
     # drop course/apprenticeship/placement spam outright
     if _SPAM.search(t):
         return False, "spam"
-    # exclude senior/lead/manager-only roles (whole word, on the title)
+    # senior/lead are KEPT for data-analyst roles (a target), but still dropped for DS/AI/ML;
+    # true management (manager/director/head/VP/chief/principal/staff) is always dropped.
+    analyst = bool(_DA_CAT.search(t)) and not _AI_CAT.search(t)
     for term in exclude_title:
+        if term.lower() in _SENIOR_OK and analyst:
+            continue
         if _word(term).search(t):
             return False, "excluded-senior"
     # must match a target role keyword on the title
@@ -31,14 +38,17 @@ def classify(title: str, include: list[str], exclude_title: list[str]) -> tuple[
         return False, "off-target"
     if re.search(r"\b(junior|graduate|entry[-\s]*level|intern)\b", t, re.I):
         return True, "beginner"
+    if re.search(r"\b(senior|lead|principal)\b", t, re.I):
+        return True, "senior"
     if re.search(r"\b(associate|mid[-\s]*level|ii|level\s*2)\b", t, re.I):
         return True, "associate/mid"
-    return True, "data-scientist"
+    return True, "mid"
 
 
 _RECRUITER = re.compile(
-    r"\b(recruit\w*|staffing|resourc\w*|rpo|headhunt\w*|talent solutions|"
-    r"talent acquisition|executive search|search partners|consultants?|agency)\b", re.I)
+    r"\b(recruit\w*|staffing|resourc\w*|rpo|headhunt\w*|talent solutions|talent acquisition|"
+    r"talent partners|\btalent\b|executive search|exec search|\bsearch\b|search partners|"
+    r"selection|manpower|consultants?|agency)\b", re.I)
 
 # Agencies rarely name themselves; they give themselves away in the JD ("our client...").
 # Kept to strong signals only so a direct employer saying "a leading bank" is NOT dropped.

@@ -1,203 +1,365 @@
-# Telegram alerts fire ONLY for these employers (plus government — see notify.gov_sectors).
-# One company per line. Matching is fuzzy + whole-word (so "Three" matches "Three UK").
-# Seeded with major UK + global employers; edit freely (add/remove names).
+# Telegram alerts fire ONLY for these employers (plus government via the _GOV regex in notify.py).
+# Auto-generated from data/companies_master.csv (curated top-employer whitelist). Edit freely.
 
-# --- Banking & finance ---
-HSBC
-Barclays
-Lloyds
-Lloyds Banking Group
-NatWest
-Santander
-Standard Chartered
-Goldman Sachs
-JP Morgan
-JPMorgan
-Morgan Stanley
-Citi
-Citigroup
-Bank of America
-Deutsche Bank
-UBS
-Credit Suisse
-BlackRock
-Schroders
-M&G
-Legal & General
-Man Group
-LSEG
-London Stock Exchange
-Bank of England
-FCA
-Financial Conduct Authority
-Revolut
-Monzo
-Starling
-Starling Bank
-Wise
-Nationwide
-Capital One
-American Express
-Mastercard
-Visa
-PayPal
-Worldpay
-GoCardless
-Zopa
-Experian
-Equifax
-
-# --- Insurance & health ---
-Aviva
-Prudential
-AXA
-Allianz
-Zurich
-RSA
-Admiral
-Direct Line
-Bupa
-NHS
-GSK
-GlaxoSmithKline
-AstraZeneca
-Pfizer
-Roche
-Novartis
-Johnson & Johnson
-Sanofi
-Wellcome
-
-# --- Retail & e-commerce ---
-Tesco
-Sainsbury's
-Sainsburys
-Asda
-Morrisons
-Marks & Spencer
-John Lewis
-Waitrose
-Ocado
-ASOS
-Boohoo
-Next
-Currys
-Argos
-Amazon
-eBay
-Trainline
-Deliveroo
-Just Eat
-Just Eat Takeaway
-Dunnhumby
-Kantar
-NielsenIQ
-Tesco Bank
-B&Q
-Kingfisher
-Wickes
-Screwfix
-Boots
-Co-op
-
-# --- Product / tech ---
-Google
-DeepMind
-Microsoft
-Meta
-Apple
-Spotify
-Netflix
-Palantir
-Bloomberg
-Stripe
-Snowflake
-Databricks
-Sky
-Salesforce
-Adobe
-Nvidia
-OpenAI
-Anthropic
-Bumble
-Expedia
-Booking.com
-Trip.com
-Depop
-
-# --- Service / consulting ---
+# --- Consulting & IT Services ---
 Accenture
-Deloitte
-PwC
-KPMG
-EY
-Ernst & Young
+Atos
+BJSS
+Baringa
+CGI
 Capgemini
 Cognizant
-Infosys
-TCS
-Tata Consultancy Services
-IBM
-Wipro
-HCL
+Deloitte
+EY
+Fujitsu
+Gartner
 HCLTech
-Atos
-CGI
-BCG
-McKinsey
-Bain
-
-# --- Energy, transport, manufacturing, telco ---
-BP
-Shell
-National Grid
-Centrica
-SSE
-EDF
-Rolls-Royce
-BAE Systems
+Infosys
+KPMG
+Kainos
+NTT DATA
+PA Consulting
+Pearson
+Publicis Sapient
+PwC
+Slalom UK
+Softwire
+Sopra Steria
+Tata Consultancy Services
+Thoughtworks
+Version 1
+Wipro
+# --- Energy, Transport & Industrial ---
 Airbus
+Anglian Water
+Aston Martin
+Auto Trader
+BAE Systems
+BMW Group UK
+Babcock International
+Bloomberg
+British Airways
+Cadent Gas
+Canonical
+Centrica
+Croda
+DHL
+DPD
+Drax Group
+Dyson
+E.ON UK
+EDF Energy
+EasyJet
+Endava
+Ford UK
+GKN Aerospace
+Heathrow Airport
+Honeywell UK
+Ineos
+JCB
 Jaguar Land Rover
-Nissan
+Jet2
+Johnson Matthey
+Leonardo
+McLaren Automotive
+National Gas
+National Grid
 Network Rail
-Transport for London
-TfL
-BT
-BT Group
-Vodafone
-Three
-EE
-O2
-Virgin Media
-Ford
+OVO Energy
+Octopus Energy
+QinetiQ
+Rightmove
+Rolls-Royce
+Royal Mail
+SSE
+Schneider Electric
+ScottishPower
+Severn Trent
+Shell
 Siemens
-Unilever
-Diageo
-Reckitt
-Nestle
-Mars
-PepsiCo
-Coca-Cola
-National Highways
-
-# --- Government & public sector ---
-HMRC
-HM Revenue & Customs
-DWP
-Department for Work and Pensions
-DVLA
-DVSA
-Home Office
+Skyscanner
+Stellantis
+Thales
+Thames Water
+Toyota Motor Manufacturing UK
+Trainline
+Transport for London
+UK Power Networks
+United Utilities
+Zoopla
+bp
+# --- Financial Services ---
+American Express
+Aviva
+BNP Paribas
+Bank of England
+Barclays
+BlackRock
+CME Group
+Capital One UK
+Checkout.com
+Citadel
+Citi
+ClearBank
+Close Brothers
+Coutts
+Deutsche Bank
+Equifax
+Experian
+FIS
+Fidelity International
+Financial Conduct Authority (FCA)
+Fitch Ratings
+Global Payments / Worldpay
+GoCardless
+Goldman Sachs
+HSBC
+Hargreaves Lansdown
+ING
+Invesco
+Investec
+JPMorganChase
+Jane Street
+Janus Henderson
+Jefferies
+Lazard
+Legal & General
+Lloyds Banking Group
+London Stock Exchange Group (LSEG)
+M&G
+MUFG
+Man Group
+Mastercard
+Metro Bank
+Mizuho
+Monzo
+Moody's
+Morgan Stanley
+NatWest Group
+Nationwide Building Society
+Nomura
+Northern Trust
+OakNorth Bank
+PayPal
+PensionBee
+Quilter
+RBC
+Rathbones
+Revolut
+S&P Global
+Santander UK
+Schroders
+St James's Place
+Standard Chartered
+Starling Bank
+State Street
+Stripe
+TSB Bank
+Tide
+TransUnion
+UBS
+Vanguard
+Virgin Money UK
+Visa
+Wells Fargo
+Wise
+Zopa
+abrdn
+# --- Government & Public Sector ---
 Cabinet Office
-DEFRA
-Ministry of Justice
-Ministry of Defence
-Ordnance Survey
-Office for National Statistics
-ONS
-Met Office
-Government Digital Service
+Civil Service Jobs
+Companies House
+Department for Education
+Department for Transport
+Department for Work and Pensions
 Environment Agency
-Ofgem
+HM Land Registry
+HM Revenue & Customs
+Home Office
+MHRA
+Met Office
+Ministry of Defence
+Ministry of Justice
+NHS Jobs / NHS England
+National Crime Agency
+National Data Guardian
+National Highways
 Ofcom
+Office for National Statistics
+Ofgem
+Ofwat
+Ordnance Survey
+Prudential Regulation Authority
 UK Health Security Agency
+Wellcome Sanger Institute
+# --- Insurance, Health & Pharma ---
+AXA UK
+AbbVie
+Admiral Group
+Allianz
+Aon
+AstraZeneca
+Bayer
+Beazley
+Bristol Myers Squibb
+Bupa
+Direct Line Group
+Eli Lilly
+GSK
+Genomics England
+Hiscox
+IQVIA
+Johnson & Johnson
+MSD
+Marsh McLennan
+Moderna UK
+Munich Re
+NICE
+Novartis
+Novo Nordisk
+Pfizer
+Phoenix Group
+Reckitt
+Roche
+Sanofi
+Smith & Nephew
+Swiss Re
+Takeda
+WTW
+Zurich Insurance
+# --- Retail, Consumer & Media ---
+ASDA
+ASOS
+Aldi
+Analytic Partners
+Annalect
+Argos
+B&Q
+BBC
+Bauer Media
+Bet365
+Boohoo
+Boots
+Brainlabs
+Burberry
+Channel 4
+Compare the Market
+Compass Group
+Croud
+Currys
+Deliveroo
+Dentsu
+Depop
+Diageo
+Dunelm
+Dunnhumby
+Ekimetrics
+Entain
+EssenceMediacom
+Farfetch
+Financial Times
+Frasers Group
+Gain Theory
+GfK
+Gousto
+Greggs
+GroupM
+Haleon
+Halfords
+Havas
+HelloFresh UK
+ITV
+Iceland Foods
+Informa
+Ipsos
+JD Sports
+Jellyfish
+John Lewis Partnership
+Just Eat UK
+Kantar
+Kingfisher
+Kraft Heinz
+Lidl UK
+Marks & Spencer
+Mars
+Merkle
+Mondelez International
+MoneySuperMarket Group
+Moonpig
+Morrisons
+Nestlé
+News
+Next
+NielsenIQ
+Ocado Group
+PepsiCo
+Primark
+Procter & Gamble
+RELX
+Reach plc
+Sainsbury's
+Screwfix
+Sodexo
+THG
+Tesco
+The Very Group
+Trustpilot
+Unilever
+WPP
+Waitrose
+Wayfair
+Whitbread
+Wickes
+William Hill
+YouGov
+eBay
+# --- Technology & Telecoms ---
+AMD
+Adobe
+Amazon / AWS
+Apple
+Arm
+Atlassian
+Autodesk
+BT Group
+Benivo
+Bumble
+Cazoo
+Cisco
+Cloudflare
+Darktrace
+Databricks
+Expedia UK
+GitHub
+Google
+Google DeepMind
+Graphcore
+HP
+IBM
+Improbable
+Intel
+Intuit
+Meta
+Microsoft
+MongoDB
+NVIDIA
+Netflix
+Onfido
+Oracle
+Palantir
+Qualcomm
+SAP
+Sage
+Salesforce
+ServiceNow
+Sky UK
+Snowflake
+Spotify UK
+TalkTalk
+TikTok
+Virgin Media O2
+VodafoneThree
+Wayve
+Workday
+Zego
+Zoom

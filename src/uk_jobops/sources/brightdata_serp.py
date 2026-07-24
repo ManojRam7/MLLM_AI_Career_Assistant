@@ -182,6 +182,10 @@ def _reject(title: str, desc: str, link: str) -> bool:
         return True
     if _stale_age(blob):
         return True
+    # a LinkedIn/careers TITLE carries the authoritative location ("... in Dublin 18, Ireland | ...").
+    # An explicit non-UK country in the title wins even if the snippet mentions a UK office.
+    if _NONUK_COUNTRY.search(title):
+        return True
     if _NONUK.search(blob) and not _UK.search(blob):
         return True
     return False
@@ -201,7 +205,8 @@ class BrightDataSerpSource(Source):
 
     def __init__(self, api_key, zone="serp", *, sector=None, run_broad=True,
                  extra_queries=None, site_queries=None, search_domains=None,
-                 companies=None, max_queries=22, pages=1, country="gb", company_batch=5):
+                 companies=None, max_queries=22, pages=1, country="gb", company_batch=5,
+                 priority_companies=None):
         self.api_key = api_key
         self.zone = zone or "serp"
         self.sector = sector
@@ -214,6 +219,7 @@ class BrightDataSerpSource(Source):
         self.pages = max(1, pages)
         self.country = country
         self.company_batch = max(1, company_batch)   # companies' careers sites grouped per SERP query
+        self.priority = set(priority_companies or [])  # top employers -> dedicated (unbatched) search
         self._first_error = ""
 
     def _board_filter(self) -> str:
@@ -259,9 +265,28 @@ class BrightDataSerpSource(Source):
         with_dom = [(n, _site_of(u)) for (n, u) in
                     (e if isinstance(e, (tuple, list)) else (e, "") for e in self.companies)]
         with_dom = [(n, d) for (n, d) in with_dom if d]
+        # TOP employers get a DEDICATED search (never crowded out by batching); the rest are batched.
+        priority = [(n, d) for (n, d) in with_dom if n in self.priority]
+        rest = [(n, d) for (n, d) in with_dom if n not in self.priority]
+
+        for name, d in priority:
+            host = d.split("/")[0]
+            q = f"site:{d} {cats}"
+            data = self._serp(q, start=0, fresh="m")
+            calls += 1
+            queried += 1
+            if data is None:
+                errors += 1
+                continue
+            found = self._extract(data, q, company_hint=name, company_domain=host)
+            if found:
+                with_roles += 1
+                with_roles_names.append(name)
+                jobs.extend(found)
+
         bs = self.company_batch
-        for i in range(0, len(with_dom), bs):
-            batch = with_dom[i:i + bs]
+        for i in range(0, len(rest), bs):
+            batch = rest[i:i + bs]
             domain_map = {d.split("/")[0]: n for (n, d) in batch}     # careers host -> company name
             sites = " OR ".join(f"site:{d}" for (_, d) in batch)
             q = f"({sites}) {cats}"

@@ -87,6 +87,12 @@ class Pipeline:
             else:
                 _all = []
             companies = [(n, u) for (n, u) in _all if not detect_ats(u)]
+            # top employers (the alert allowlist) get a dedicated, un-batched search so a top
+            # company's roles are never crowded out of a shared batch query.
+            from .notify import is_top_or_gov, load_notify_allowlist
+            _ncfg = self.s.get("notify", {})
+            _allow = load_notify_allowlist(self.cfg.path(_ncfg.get("companies_file", "data/notify_companies.txt")))
+            priority = {n for (n, u) in companies if is_top_or_gov(n, "", _allow, [])}
             out.append(BrightDataSerpSource(
                 sec.brightdata_api_key, sec.brightdata_serp_zone,
                 sector=sector, run_broad=run_broad,
@@ -94,7 +100,8 @@ class Pipeline:
                 site_queries=self._gov_site_queries(sector, run_broad, bd),
                 search_domains=_domains, companies=companies,
                 max_queries=bd.get("max_queries", 20), pages=bd.get("pages", 1),
-                country=bd.get("country", "gb"), company_batch=bd.get("company_batch", 5)))
+                country=bd.get("country", "gb"), company_batch=bd.get("company_batch", 5),
+                priority_companies=priority))
         return out
 
     def _gov_site_queries(self, sector, run_broad, bd) -> list[str]:
