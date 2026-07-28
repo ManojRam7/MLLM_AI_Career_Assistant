@@ -197,7 +197,8 @@ def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
     f1, f2, f3, f4 = st.columns([2, 2, 1, 3])
     srcs = f1.multiselect("Source", sorted(base["source"].dropna().unique()), key=f"{key_prefix}_src")
     secs = f2.multiselect("Sector", sorted(base["sector"].dropna().unique()), key=f"{key_prefix}_sec")
-    only_bucket = f3.checkbox("⭐ only", key=f"{key_prefix}_bk")
+    only_bucket = f3.checkbox("⭐ top list", key=f"{key_prefix}_bk",
+                              help="Show ONLY your bucket-list top companies (hide the '— other —' broad-market minors)")
     q = f4.text_input("Search title / company", key=f"{key_prefix}_q")
     min_fit = st.slider("Minimum fit score", 0, 100, 0, 5, key=f"{key_prefix}_fit")
 
@@ -290,8 +291,9 @@ def render_kanban(tracked, url, kp):
         st.rerun()
 
 
-(tab_overview, tab_jobs, tab_source, tab_pipeline, tab_board, tab_cvs) = st.tabs(
-    ["📊 Overview", "💼 Jobs", "🗂️ By Source", "⚙️ Runs & LLMs", "📋 Tracker", "📝 Recommendations"])
+(tab_overview, tab_jobs, tab_source, tab_pipeline, tab_coverage, tab_bucket, tab_board, tab_cvs) = st.tabs(
+    ["📊 Overview", "💼 Jobs", "🗂️ By Source", "⚙️ Runs & LLMs", "🔎 Search Coverage",
+     "🏢 Bucket List", "📋 Tracker", "📝 Recommendations"])
 
 # ---------------------------------------------------------------- OVERVIEW
 with tab_overview:
@@ -582,4 +584,149 @@ with tab_cvs:
                                      key=f"cov_{r['dedupe_key']}")
                     else:
                         st.caption("No cover letter text.")
+
+
+# --------------------------------------------------------------- SEARCH COVERAGE
+with tab_coverage:
+    import json as _jc
+    import datetime as _dtc
+
+    def _loc(ts):
+        try:
+            return _dtc.datetime.fromisoformat(str(ts)).astimezone().strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            return str(ts)[:16].replace("T", " ")
+
+    def _sjc(r):
+        raw = r.get("summary_json")
+        if isinstance(raw, dict):
+            return raw
+        try:
+            return _jc.loads(raw) if raw else {}
+        except Exception:
+            return {}
+
+    st.subheader("🔎 Search coverage — is every company being searched?")
+    st.caption("Proof of what each run actually searched: how many of your target companies were "
+               "queried, how many returned roles, and which sources contributed. Your daily 4 AM run "
+               "searches the ENTIRE list; here you can confirm it every day.")
+    runs = load_runs(url)
+    if runs.empty:
+        st.info("No runs logged yet.")
+    else:
+        allruns = [(_loc(r.get("run_at")), _sjc(r)) for _, r in runs.iterrows()]
+        # headline: the most recent full/all-company run
+        full = [(t, s) for t, s in allruns if s.get("companies_in_sector")]
+        if full:
+            t, s = full[0]
+            searched = int(s.get("companies_searched", 0) or 0)
+            total = int(s.get("companies_in_sector", 0) or 0)
+            withroles = int(s.get("companies_with_roles", 0) or 0)
+            pct = round(100 * searched / total) if total else 0
+            st.markdown(f"**Latest full run — {t}**")
+            m = st.columns(4)
+            m[0].metric("Companies searched", f"{searched}/{total}")
+            m[1].metric("Coverage", f"{pct}%")
+            m[2].metric("Returned roles", withroles)
+            m[3].metric("Missed", max(0, total - searched))
+            if pct < 100:
+                st.warning(f"Only {pct}% of the list was searched on this run — some companies may have "
+                           "been skipped (timeout/error). Re-run or check the pipeline if this persists.")
+            else:
+                st.success("Full list searched. ✅")
+        else:
+            st.info("No all-company run recorded yet (the daily 4 AM run populates this).")
+
+        # trend table + charts across all runs
+        rows = []
+        for t, s in allruns:
+            sc = {x.get("source", "?").split(" (")[0]: x.get("count", 0) for x in s.get("sources", [])}
+            rows.append({
+                "run": t, "sector": s.get("sector", "ALL"),
+                "discovered": int(s.get("discovered", 0) or 0), "new": int(s.get("stored_new", 0) or 0),
+                "searched": int(s.get("companies_searched", 0) or 0),
+                "with_roles": int(s.get("companies_with_roles", 0) or 0),
+                "LinkedIn": next((v for k, v in sc.items() if "Bright" in k or "LinkedIn" in k), 0),
+                "ATS": next((v for k, v in sc.items() if "ATS" in k), 0),
+                "Reed": sc.get("Reed", 0), "Adzuna": sc.get("Adzuna", 0),
+                "DS": int(s.get("category_data_science", 0) or 0),
+                "AI": int(s.get("category_ai_engineer", 0) or 0),
+                "DA": int(s.get("category_data_analysis", 0) or 0),
+            })
+        rdf = pd.DataFrame(rows)
+        st.divider()
+        cc = st.columns(2)
+        with cc[0]:
+            st.caption("Jobs discovered per run")
+            st.bar_chart(rdf.set_index("run")["discovered"], height=240)
+        with cc[1]:
+            st.caption("Companies searched vs returned roles")
+            st.line_chart(rdf.set_index("run")[["searched", "with_roles"]], height=240)
+        cc2 = st.columns(2)
+        with cc2[0]:
+            st.caption("Jobs by source, per run")
+            st.bar_chart(rdf.set_index("run")[["LinkedIn", "ATS", "Reed", "Adzuna"]], height=240)
+        with cc2[1]:
+            st.caption("Jobs by category, per run")
+            st.bar_chart(rdf.set_index("run")[["DS", "AI", "DA"]], height=240)
+
+        st.divider()
+        st.markdown("**Inspect a run — which companies returned roles**")
+        labels = [f"{t}  ·  {s.get('sector', 'ALL')}" for t, s in allruns]
+        pick = st.selectbox("Run", labels, key="cov_pick")
+        s = allruns[labels.index(pick)][1]
+        d = st.columns(4)
+        d[0].metric("Discovered", int(s.get("discovered", 0) or 0))
+        d[1].metric("New", int(s.get("stored_new", 0) or 0))
+        d[2].metric("Searched", int(s.get("companies_searched", 0) or 0))
+        d[3].metric("With roles", int(s.get("companies_with_roles", 0) or 0))
+        names = s.get("companies_with_roles_names", []) or []
+        if names:
+            st.caption(f"✅ Companies that returned matching roles this run ({len(names)}):")
+            st.write(", ".join(sorted(names)))
+        st.caption("Per-source detail:")
+        st.dataframe(pd.DataFrame([{"source": x.get("source"), "status": x.get("status"),
+                                    "jobs": x.get("count"), "note": (x.get("message") or "")[:120]}
+                                   for x in s.get("sources", [])]), hide_index=True, width="stretch")
+        st.dataframe(rdf, hide_index=True, width="stretch", height=300)
+
+
+# --------------------------------------------------------------- BUCKET LIST
+with tab_bucket:
+    from uk_jobops.bucketlist import _core
+    st.subheader("🏢 Bucket list — your target companies")
+    st.caption("The curated list of top UK employers the engine searches every day (per-company). "
+               "Green = has returned at least one job into the database.")
+    bpath = cfg.path(cfg.settings.get("bucket_list", {}).get("path", "data/companies_master.csv"))
+    try:
+        bl = pd.read_csv(bpath).fillna("")
+    except Exception as exc:
+        bl = None
+        st.error(f"Could not load the bucket list: {exc}")
+    if bl is not None and not bl.empty:
+        # which companies have jobs in the DB (normalised-name match)
+        jobcores = set()
+        if not jobs.empty and "company" in jobs:
+            jobcores = {_core(c) for c in jobs["company"].astype(str) if c}
+        bl["has_jobs"] = bl["company_name"].astype(str).map(lambda n: "🟢" if _core(n) in jobcores else "—")
+        tier_col = bl["tier"] if "tier" in bl else pd.Series(["master"] * len(bl))
+        m = st.columns(4)
+        m[0].metric("Companies", len(bl))
+        m[1].metric("Tier A (priority)", int((tier_col == "top100").sum()))
+        m[2].metric("Sectors", bl["sector"].nunique())
+        m[3].metric("With ≥1 job", int((bl["has_jobs"] == "🟢").sum()))
+        st.caption("Companies per sector")
+        st.bar_chart(bl["sector"].value_counts(), height=260)
+        secs = ["All sectors"] + sorted(bl["sector"].unique().tolist())
+        pick = st.selectbox("Filter by sector", secs, key="bucket_sec")
+        view = bl if pick == "All sectors" else bl[bl["sector"] == pick]
+        only_missing = st.checkbox("Show only companies with no jobs yet", key="bucket_missing")
+        if only_missing:
+            view = view[view["has_jobs"] != "🟢"]
+        cols = [c for c in ["has_jobs", "company_name", "sector", "tier", "industry", "careers_url"] if c in view]
+        st.caption(f"{len(view)} companies")
+        st.dataframe(
+            view[cols].rename(columns={"has_jobs": " ", "company_name": "company"}),
+            hide_index=True, width="stretch", height=560,
+            column_config={"careers_url": st.column_config.LinkColumn("careers", display_text="open")})
 
