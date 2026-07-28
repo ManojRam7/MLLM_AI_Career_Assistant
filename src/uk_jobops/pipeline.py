@@ -233,6 +233,13 @@ class Pipeline:
         collapsed = store.collapse_duplicates()
         if collapsed:
             summary["collapsed_duplicates"] = collapsed
+        # raise the bar on the broad market: drop non-bucket jobs scored below the threshold so
+        # minor/unknown companies don't crowd out the top-company picks (bucket + tracked kept)
+        bmf = self.s.get("scoring", {}).get("broad_market_min_fit", 0)
+        if bmf:
+            pruned = store.prune_broad_market(bmf)
+            if pruned:
+                summary["pruned_broad_market"] = pruned
 
         # fit scoring + tailoring need LLM keys. Capped per run + resilient to
         # free-tier rate limits (a 429 stops the LLM phase cleanly and resumes next run).

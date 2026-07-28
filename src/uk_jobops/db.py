@@ -272,6 +272,15 @@ class Store:
             cur.execute(sql, (agg, expired, nonuk, uk))
             return cur.rowcount
 
+    def prune_broad_market(self, min_fit: int = 75) -> int:
+        """Raise the bar on the broad market: delete non-bucket ('— other —') jobs that have been
+        SCORED below min_fit, so lesser-known minors/startups don't clutter the feed. Always keeps
+        bucket-list top companies, tracked/manual jobs, and not-yet-scored jobs (fit_score = 0)."""
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM jobs WHERE is_custom = FALSE AND tracked = FALSE "
+                        "AND in_bucket = FALSE AND fit_score > 0 AND fit_score < %s", (min_fit,))
+            return cur.rowcount
+
     def collapse_duplicates(self) -> int:
         """Keep ONE row per (title, company, first-city). Adzuna returns the same job under
         several tracking URLs, so URL-identity leaves cross-run duplicates - this cleans them,
