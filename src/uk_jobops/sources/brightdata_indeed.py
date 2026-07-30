@@ -104,13 +104,13 @@ class BrightDataIndeedSource(Source):
         for it in rows:
             if not isinstance(it, dict):
                 continue
-            title = _first(it, "job_title", "title")
-            company = _first(it, "company_name", "company", "employer")
-            loc = _first(it, "location", "job_location")
-            url = _first(it, "url", "job_link", "apply_link", "link")
-            desc = str(_first(it, "description_text", "job_description", "description", "job_summary"))[:2500]
-            posted = str(_first(it, "date_posted", "posted_date", "job_posted_date"))[:10]
-            status = str(_first(it, "is_expired", "is_active", "job_status")).lower()
+            title = _first(it, "job_title", "title", "jobtitle", "position", "name")
+            company = _first(it, "company_name", "company", "employer", "companyname", "company_name_normalized")
+            loc = _first(it, "location", "job_location", "formatted_location", "city", "jobLocation")
+            url = _first(it, "url", "job_link", "apply_link", "link", "job_url", "joburl", "indeed_url", "apply_url")
+            desc = str(_first(it, "description_text", "job_description", "description", "job_summary", "snippet"))[:2500]
+            posted = str(_first(it, "date_posted", "posted_date", "job_posted_date", "date", "posted"))[:10]
+            status = str(_first(it, "is_expired", "is_active", "job_status", "status")).lower()
             if not title or not url:
                 continue
             if looks_non_uk(f"{loc} {title} {desc}"):

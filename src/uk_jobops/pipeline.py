@@ -327,6 +327,13 @@ class Pipeline:
                     break
                 time.sleep(delay)
 
+            # THIS run's jobs are now scored -> prune freshly-scored broad-market minors immediately
+            # (the cleanup pass above only catches PRIOR runs, leaving a one-run lag; this removes it)
+            if bmf:
+                p2 = store.prune_broad_market(bmf)
+                if p2:
+                    summary["pruned_broad_market"] = summary.get("pruned_broad_market", 0) + p2
+
             # if scoring already exhausted the quota, don't waste a call on recommendations
             rec_jobs = ([] if llm_exhausted else
                         store.jobs_to_recommend(scoring.get("tailor_threshold", 70),

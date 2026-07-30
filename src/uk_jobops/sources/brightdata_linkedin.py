@@ -33,7 +33,7 @@ def _first(d: dict, *keys):
 
 
 class BrightDataLinkedInSource(Source):
-    name = "LinkedIn (Bright Data)"
+    name = "LinkedIn Jobs (Bright Data)"      # STRUCTURED dataset - distinct from the SERP 'LinkedIn (Bright Data)'
 
     def __init__(self, api_key, dataset_id, *, keywords=None, location="United Kingdom",
                  country="GB", time_range="Past month", max_wait=480, poll=15, max_age_days=30):
