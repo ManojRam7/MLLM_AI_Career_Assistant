@@ -672,8 +672,8 @@ with tab_coverage:
 
         st.divider()
         st.markdown("**Inspect a run — which companies returned roles**")
-        labels = [f"{t}  ·  {s.get('sector', 'ALL')}" for t, s in allruns]
-        pick = st.selectbox("Run", labels, key="cov_pick")
+        labels = [f"{i + 1}. {t}  ·  {s.get('sector', 'ALL')}" for i, (t, s) in enumerate(allruns)]
+        pick = st.selectbox("Run", labels, key="coverage_run_pick")
         s = allruns[labels.index(pick)][1]
         d = st.columns(4)
         d[0].metric("Discovered", int(s.get("discovered", 0) or 0))

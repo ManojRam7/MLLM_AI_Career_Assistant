@@ -262,9 +262,10 @@ class BrightDataSerpSource(Source):
         cats = ("(data scientist OR data analyst OR AI engineer OR machine learning engineer OR "
                 "analytics engineer OR data analytics OR machine learning OR data science) "
                 "(United Kingdom OR London OR UK OR England OR Scotland OR Wales)")
-        with_dom = [(n, _site_of(u)) for (n, u) in
-                    (e if isinstance(e, (tuple, list)) else (e, "") for e in self.companies)]
-        with_dom = [(n, d) for (n, d) in with_dom if d]
+        _pairs = [(n, _site_of(u)) for (n, u) in
+                  (e if isinstance(e, (tuple, list)) else (e, "") for e in self.companies)]
+        with_dom = [(n, d) for (n, d) in _pairs if d]
+        no_dom = [n for (n, d) in _pairs if not d]     # gov portals / unusable careers URL -> LinkedIn by name
         # TOP employers get a DEDICATED search (never crowded out by batching); the rest are batched.
         priority = [(n, d) for (n, d) in with_dom if n in self.priority]
         rest = [(n, d) for (n, d) in with_dom if n not in self.priority]
@@ -301,6 +302,22 @@ class BrightDataSerpSource(Source):
                 got = {j.company for j in found if j.company}
                 with_roles += len(got)
                 with_roles_names.extend(got)
+                jobs.extend(found)
+
+        # 3) FULL COVERAGE: companies with no usable careers domain (gov portals, odd URLs) get a
+        #    LinkedIn name search so EVERY company on the list is searched (100% coverage).
+        for name in no_dom:
+            q = f'site:linkedin.com/jobs "{name}" {cats}'
+            data = self._serp(q, start=0, fresh="m")
+            calls += 1
+            queried += 1
+            if data is None:
+                errors += 1
+                continue
+            found = self._extract(data, q, company_hint=name)
+            if found:
+                with_roles += 1
+                with_roles_names.append(name)
                 jobs.extend(found)
 
         seen, uniq = set(), []

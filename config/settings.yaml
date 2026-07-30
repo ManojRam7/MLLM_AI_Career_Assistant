@@ -190,6 +190,20 @@ seniority:
     - "Netrolynx"
     - "SoTalent"
     - "SustainRecruit"
+    # recruiters/aggregators seen in the latest run
+    - "Harvey Nash"
+    - "Harrington Starr"
+    - "eFinancialCareers"
+    - "Jobgether"
+    - "Fetchjobs"
+    - "Rnjobforce"
+    - "Hyra"
+    - "Ixceed"
+    - "Trinitysoft"
+    - "Dynamic Futures"
+    - "Beagle Technology"
+    - "Jack Jill"
+    - "Nextech"
 
 scoring:
   tailor_threshold: 70           # only tailor a CV when fit score >= this (saves tokens)
@@ -215,13 +229,13 @@ sources:
   brightdata:                    # Google job search via Bright Data SERP API (main engine)
     enabled: true
     country: "gb"
-    pages: 1                     # SERP pages per query (each page = 1 billed request; keep low for credits)
+    pages: 2                     # SERP pages per query - deeper coverage (pay-as-you-go, credits no longer capped)
     search_domains:              # broad queries scoped to TRUSTED UK boards only (aggregators dropped)
       - "uk.linkedin.com/jobs"
       - "www.reed.co.uk/jobs"
     top_companies_per_run: 5     # rotating per-company sample for the active sector (DS + DA each)
     company_batch: 5             # careers-sites grouped per Google query (higher = fewer credits, less depth)
-    max_queries: 22              # broad + gov/site + per-company, capped for credit control
+    max_queries: 40              # broad market queries (pay-as-you-go, so cover more of the market)
     gov_queries: ["data analyst", "data scientist", "data engineer"]
     civil_service_sectors: ["Government & Public Sector"]   # civilservicejobs site: queries on this sector's run
     nhs_sectors: ["Insurance, Health & Pharma"]             # jobs.nhs.uk site: queries on this sector's run
@@ -252,15 +266,27 @@ sources:
     batch_size: 40               # companies per actor run (LinkedIn companyName filter)
     max_jobs_per_company: 6
     max_batches: 8               # cap actor runs per pipeline run (credit control)
-  linkedin:                      # STRUCTURED LinkedIn Jobs via Bright Data Web Scraper API
-    enabled: false               # OFF - the Bright Data LinkedIn dataset needs a $250 min order.
-                                 # flip true + set BRIGHTDATA_LINKEDIN_DATASET only if you buy the dataset.
-    keywords: ["data scientist", "data analyst", "machine learning engineer"]
+  linkedin:                      # STRUCTURED LinkedIn Jobs via Bright Data Web Scraper API (real-time,
+    enabled: true                # accurate company/location/date/is-active - no Google index lag). Activates
+                                 # only when BRIGHTDATA_LINKEDIN_DATASET (dataset_id) is set; else skips safely.
+                                 # Pay-as-you-go now, so this is the top quality lever. Runs on the daily/broad run.
+    keywords: ["data scientist", "marketing data scientist", "data analyst", "senior data analyst",
+               "analytics engineer", "machine learning engineer", "AI engineer"]
     location: "United Kingdom"
     country: "GB"
     time_range: "Past month"     # freshness (fewer, fresher records = lower cost)
     max_age_days: 30
     max_wait: 480                # seconds to wait for the async scrape (poll)
+  indeed:                        # STRUCTURED Indeed Jobs via Bright Data Web Scraper API (real employer/
+    enabled: true                # location/date). Activates only when BRIGHTDATA_INDEED_DATASET is set; else skips.
+    keywords: ["data scientist", "marketing data scientist", "data analyst", "senior data analyst",
+               "analytics engineer", "machine learning engineer", "AI engineer"]
+    location: "United Kingdom"
+    country: "GB"
+    domain: "indeed.co.uk"
+    date_posted: "Last 7 days"
+    max_age_days: 30
+    max_wait: 480
 
 cleanup:                         # one-time / ongoing housekeeping, runs every pass (idempotent)
   purge_sources: ["Apify"]       # delete rows from retired sources (old 'Google (Apify)' rows)

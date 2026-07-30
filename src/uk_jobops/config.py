@@ -40,6 +40,7 @@ class Secrets:
     brightdata_api_key: str = ""
     brightdata_serp_zone: str = "serp"
     brightdata_linkedin_dataset: str = ""
+    brightdata_indeed_dataset: str = ""
     apify_tokens: list[str] = field(default_factory=list)
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
@@ -58,6 +59,7 @@ class Secrets:
             brightdata_api_key=g("BRIGHTDATA_API_KEY", ""),
             brightdata_serp_zone=g("BRIGHTDATA_SERP_ZONE", "serp"),
             brightdata_linkedin_dataset=g("BRIGHTDATA_LINKEDIN_DATASET", ""),
+            brightdata_indeed_dataset=g("BRIGHTDATA_INDEED_DATASET", ""),
             apify_tokens=[t for t in (g("APIFY_TOKEN_1", ""), g("APIFY_TOKEN_2", ""),
                                       g("APIFY_TOKEN_3", ""), g("APIFY_TOKEN_4", ""),
                                       g("APIFY_TOKEN", "")) if t],

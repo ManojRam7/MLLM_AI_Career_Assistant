@@ -65,6 +65,17 @@ class Pipeline:
                 country=li.get("country", "GB"), time_range=li.get("time_range", "Past month"),
                 max_wait=li.get("max_wait", 480), max_age_days=li.get("max_age_days", 30)))
 
+        # STRUCTURED Indeed (Bright Data dataset) - same real-time structured coverage for Indeed.
+        ind = src_cfg.get("indeed", {})
+        if run_broad and ind.get("enabled") and sec.brightdata_api_key and sec.brightdata_indeed_dataset:
+            from .sources.brightdata_indeed import BrightDataIndeedSource
+            out.append(BrightDataIndeedSource(
+                sec.brightdata_api_key, sec.brightdata_indeed_dataset,
+                keywords=ind.get("keywords"), location=ind.get("location", "United Kingdom"),
+                country=ind.get("country", "GB"), domain=ind.get("domain", "indeed.co.uk"),
+                date_posted=ind.get("date_posted", "Last 7 days"),
+                max_wait=ind.get("max_wait", 480), max_age_days=ind.get("max_age_days", 30)))
+
         bd = src_cfg.get("brightdata", {})
         if bd.get("enabled"):     # ALWAYS add when enabled; the source reports 'skipped (no key)' if the
                                   # BRIGHTDATA_API_KEY is missing -> you can SEE it's not connected in the logs
