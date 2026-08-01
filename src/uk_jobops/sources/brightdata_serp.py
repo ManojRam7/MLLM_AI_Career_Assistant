@@ -113,7 +113,18 @@ _NONUK_COUNTRY = re.compile(
     r"philippines|indonesia|thailand|vietnam|australia|new zealand|"
     r"brazil|mexico|argentina|colombia|chile|south africa|nigeria|kenya|"
     r"massachusetts|california|texas|new york|washington|illinois|georgia|florida|"
-    r"riga|lisbon|dublin|brussels|machelen|amsterdam|paris|berlin|madrid|barcelona|milan)\b", re.I)
+    r"riga|lisbon|dublin|brussels|machelen|amsterdam|paris|berlin|madrid|barcelona|milan|"
+    r"warsaw|warszawa|krak[oó]w|krakow|wroc[lł]aw|gda[nń]sk|pozna[nń]|katowice|"
+    r"bucharest|sofia|prague|budapest|vienna|zurich|geneva|munich|hamburg|frankfurt|"
+    r"lisbon|porto|athens|helsinki|stockholm|copenhagen|oslo|tallinn|vilnius|"
+    r"bengaluru|bangalore|hyderabad|pune|chennai|gurgaon|noida|mumbai|delhi|"
+    r"toronto|vancouver|sydney|melbourne|dubai|singapore|tel aviv|cairo)\b", re.I)
+
+
+def nonuk_country(text: str) -> bool:
+    """High-confidence non-UK signal (explicit country / foreign city). Used as a global gate to
+    drop leaks from ANY source (e.g. Accenture 'Warsaw' with no 'Poland' in the text)."""
+    return bool(_NONUK_COUNTRY.search(text or ""))
 _REMOTE = re.compile(r"\b(remote|flexible|home[- ]?based|work from home|anywhere in the uk|distributed)\b", re.I)
 _UK = re.compile(
     r"\b(united kingdom|england|scotland|wales|northern ireland|\buk\b|london|manchester|"
@@ -304,9 +315,11 @@ class BrightDataSerpSource(Source):
                 with_roles_names.extend(got)
                 jobs.extend(found)
 
-        # 3) FULL COVERAGE: companies with no usable careers domain (gov portals, odd URLs) get a
-        #    LinkedIn name search so EVERY company on the list is searched (100% coverage).
-        for name in no_dom:
+        # 3) companies with no usable careers domain (gov portals, odd URLs): a LinkedIn name search
+        #    for full coverage - BUT only when the structured LinkedIn scraper is OFF. When it's ON,
+        #    LinkedIn is handled there (one LinkedIn source), and SERP stays for career-site/Google picks.
+        _li_in_serp = any("linkedin" in d.lower() for d in self.search_domains)
+        for name in (no_dom if _li_in_serp else []):
             q = f'site:linkedin.com/jobs "{name}" {cats}'
             data = self._serp(q, start=0, fresh="m")
             calls += 1

@@ -108,7 +108,9 @@ class Store:
                 "database password in it. A Supabase API key (anon/service_role) will not work.")
         import psycopg
 
-        self.conn = psycopg.connect(u, autocommit=True)
+        # prepare_threshold=None disables psycopg3 auto-prepared-statements, which BREAK on Supabase's
+        # transaction pooler (PgBouncer) with 'prepared statement "_pg3_0" already exists'. Required.
+        self.conn = psycopg.connect(u, autocommit=True, prepare_threshold=None)
 
     def init_schema(self) -> None:
         with self.conn.cursor() as cur:

@@ -212,7 +212,9 @@ scoring:
   tailor_threshold: 70           # only tailor a CV when fit score >= this (saves tokens)
   shortlist_threshold: 60
   max_score_per_run: 300         # DeepSeek cheap+batched; the daily all-list run finds more, so clear backlog fast
-  broad_market_min_fit: 75       # non-bucket '— other —' jobs are dropped once scored below this (0 = keep all)
+  broad_market_min_fit: 0        # 0 = KEEP everything (accumulate / look-back); jobs never auto-deleted.
+                                 # Surface top companies with the '⭐ top list' toggle instead of deleting.
+                                 # Set e.g. 60 to auto-remove non-bucket jobs scored below that.
   score_batch_size: 8            # jobs scored per LLM call (fewer calls + tokens; clears backlog faster)
   max_tailor_per_run: 8          # Gemini via Google AI Pro has expanded limits, so tailor a few more per run
   verify_threshold: 70           # two-model consensus: re-check DeepSeek picks >= this with Gemini (0 = off)

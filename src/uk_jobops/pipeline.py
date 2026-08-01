@@ -162,6 +162,13 @@ class Pipeline:
                                           sen.get("exclude_company", []),
                                           exclude_recruiters=sen.get("exclude_recruiters", True))
         targets = dedupe(targets)
+        # GLOBAL non-UK gate: drop any job whose location/title names a non-UK country or foreign
+        # city, from ANY source (catches leaks like Accenture 'Warsaw' that a source filter missed).
+        from .sources.brightdata_serp import nonuk_country
+        _b4 = len(targets)
+        targets = [j for j in targets
+                   if not nonuk_country(f"{j.location or ''} {j.locations or ''} {j.title or ''}")]
+        _nonuk_dropped = _b4 - len(targets)
 
         # Boost: tag jobs by bucket tier so top-100 target companies jump the
         # scoring/tailoring queue (db queries order top100 first, then any bucket).
