@@ -274,6 +274,17 @@ class Store:
             cur.execute(sql, (agg, expired, nonuk, uk))
             return cur.rowcount
 
+    def purge_expired(self, max_days: int = 60) -> int:
+        """Delete stored jobs whose ISO posted date is older than max_days (expired postings).
+        Only touches rows with a real YYYY-MM-DD posted_date; keeps manual/tracked jobs."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM jobs WHERE is_custom = FALSE AND tracked = FALSE "
+                "AND posted_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' "
+                "AND to_date(substring(posted_date, 1, 10), 'YYYY-MM-DD') < current_date - %s",
+                (max_days,))
+            return cur.rowcount
+
     def prune_broad_market(self, min_fit: int = 75) -> int:
         """Raise the bar on the broad market: delete non-bucket ('— other —') jobs that have been
         SCORED below min_fit, so lesser-known minors/startups don't clutter the feed. Always keeps

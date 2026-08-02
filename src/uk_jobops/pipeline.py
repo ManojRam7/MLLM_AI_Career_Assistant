@@ -55,19 +55,21 @@ class Pipeline:
         # Runs on the broad/full run (keyword discovery is market-wide). When active, SERP stops
         # searching LinkedIn (structured is better) to avoid duplicate, lower-quality LinkedIn rows.
         li = src_cfg.get("linkedin", {})
-        linkedin_on = bool(run_broad and li.get("enabled") and sec.brightdata_api_key
-                           and sec.brightdata_linkedin_dataset)
-        if linkedin_on:
+        # Add whenever enabled (even without a dataset_id) so it reports 'skipped (no dataset)' VISIBLY
+        # in the source panel - that's how you SEE the BRIGHTDATA_LINKEDIN_DATASET secret isn't set.
+        if run_broad and li.get("enabled") and sec.brightdata_api_key:
             from .sources.brightdata_linkedin import BrightDataLinkedInSource
             out.append(BrightDataLinkedInSource(
                 sec.brightdata_api_key, sec.brightdata_linkedin_dataset,
                 keywords=li.get("keywords"), location=li.get("location", "United Kingdom"),
                 country=li.get("country", "GB"), time_range=li.get("time_range", "Past month"),
                 max_wait=li.get("max_wait", 480), max_age_days=li.get("max_age_days", 30)))
+        # only drop SERP-LinkedIn when structured LinkedIn is TRULY active (dataset present + producing)
+        linkedin_on = bool(li.get("enabled") and sec.brightdata_api_key and sec.brightdata_linkedin_dataset)
 
-        # STRUCTURED Indeed (Bright Data dataset) - same real-time structured coverage for Indeed.
+        # STRUCTURED Indeed (Bright Data dataset) - added when enabled so its skip/error status shows too.
         ind = src_cfg.get("indeed", {})
-        if run_broad and ind.get("enabled") and sec.brightdata_api_key and sec.brightdata_indeed_dataset:
+        if run_broad and ind.get("enabled") and sec.brightdata_api_key:
             from .sources.brightdata_indeed import BrightDataIndeedSource
             out.append(BrightDataIndeedSource(
                 sec.brightdata_api_key, sec.brightdata_indeed_dataset,
@@ -169,6 +171,18 @@ class Pipeline:
         targets = [j for j in targets
                    if not nonuk_country(f"{j.location or ''} {j.locations or ''} {j.title or ''}")]
         _nonuk_dropped = _b4 - len(targets)
+        # EXPIRY gate: drop jobs whose posted date is older than the max age (keeps look-back to RECENT
+        # jobs; a role posted 200 days ago is expired). Unparseable dates are kept.
+        import datetime as _dtp
+        max_age = int(search.get("max_job_age_days", 60))
+
+        def _too_old(posted) -> bool:
+            try:
+                d = _dtp.date.fromisoformat(str(posted)[:10])
+            except Exception:
+                return False
+            return (_dtp.date.today() - d).days > max_age
+        targets = [j for j in targets if not _too_old(j.posted_date)]
 
         # Boost: tag jobs by bucket tier so top-100 target companies jump the
         # scoring/tailoring queue (db queries order top100 first, then any bucket).
@@ -248,6 +262,9 @@ class Pipeline:
         despam = store.purge_spam()
         if despam:
             summary["purged_spam"] = despam
+        expired = store.purge_expired(int(self.s.get("search", {}).get("max_job_age_days", 60)))
+        if expired:
+            summary["purged_expired"] = expired
         collapsed = store.collapse_duplicates()
         if collapsed:
             summary["collapsed_duplicates"] = collapsed

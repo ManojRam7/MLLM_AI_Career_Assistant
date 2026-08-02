@@ -637,6 +637,23 @@ with tab_coverage:
         else:
             st.info("No all-company run recorded yet (the daily 4 AM run populates this).")
 
+        # SOURCE STATUS — latest run, front and centre, so you can SEE which sources ran/skipped/errored
+        latest = allruns[0][1] if allruns else {}
+        lsrcs = latest.get("sources", [])
+        if lsrcs:
+            st.divider()
+            st.markdown("**🔌 Sources — latest run**  (🟢 ok · ⚪ skipped · 🔴 error)")
+            srows = []
+            for x in lsrcs:
+                stt = str(x.get("status", ""))
+                dot = "🟢" if stt == "ok" else ("🔴" if stt == "error" else "⚪")
+                srows.append({" ": dot, "source": x.get("source", "?"), "status": stt,
+                              "jobs": x.get("count", 0), "detail": (x.get("message") or "")[:160]})
+            st.dataframe(pd.DataFrame(srows), hide_index=True, width="stretch")
+            st.caption("If 'LinkedIn Jobs (Bright Data)' or 'Indeed (Bright Data)' say **skipped** the "
+                       "dataset secret isn't set; **error** means the input schema needs a tweak — send me "
+                       "the detail text.")
+
         # trend table + charts across all runs
         rows = []
         for t, s in allruns:

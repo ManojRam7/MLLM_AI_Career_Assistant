@@ -39,6 +39,7 @@ search:
   recency_days_recurring: 7      # rolling week window so nothing recent is missed between runs
   recency_days_first: 21         # first run backfills 3 weeks
   max_per_source: 200            # pull deeper from each free API (Reed/Adzuna)
+  max_job_age_days: 60           # drop jobs posted more than this many days ago (expired postings)
   require_bucket: false           # strict: keep ONLY jobs from your 750 target companies (max focus)
 
 seniority:
