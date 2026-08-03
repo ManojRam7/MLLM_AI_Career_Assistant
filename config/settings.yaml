@@ -236,9 +236,12 @@ sources:
     enabled: true
     country: "gb"
     pages: 2                     # SERP pages per query - deeper coverage (pay-as-you-go, credits no longer capped)
-    search_domains:              # broad queries scoped to TRUSTED UK boards only (aggregators dropped)
+    search_domains:              # broad queries: LinkedIn + all major UK boards ("overall Google" sweep)
       - "uk.linkedin.com/jobs"
       - "www.reed.co.uk/jobs"
+      - "www.totaljobs.com"
+      - "www.cv-library.co.uk"
+      - "uk.indeed.com"
     top_companies_per_run: 5     # rotating per-company sample for the active sector (DS + DA each)
     company_batch: 5             # careers-sites grouped per Google query (higher = fewer credits, less depth)
     max_queries: 40              # broad market queries (pay-as-you-go, so cover more of the market)
@@ -272,10 +275,10 @@ sources:
     batch_size: 40               # companies per actor run (LinkedIn companyName filter)
     max_jobs_per_company: 6
     max_batches: 8               # cap actor runs per pipeline run (credit control)
-  linkedin:                      # STRUCTURED LinkedIn Jobs via Bright Data Web Scraper API (real-time,
-    enabled: true                # accurate company/location/date/is-active - no Google index lag). Activates
-                                 # only when BRIGHTDATA_LINKEDIN_DATASET (dataset_id) is set; else skips safely.
-                                 # Pay-as-you-go now, so this is the top quality lever. Runs on the daily/broad run.
+  linkedin:                      # STRUCTURED LinkedIn Jobs via Bright Data Web Scraper API.
+    enabled: false               # OFF - the BD Web Scraper product needs account activation ('Customer is
+                                 # not active'). Using SERP for LinkedIn instead (works well: 72 top cos/run).
+                                 # Flip true only after activating the LinkedIn dataset in Bright Data.
     keywords: ["data scientist", "marketing data scientist", "data analyst", "senior data analyst",
                "analytics engineer", "machine learning engineer", "AI engineer"]
     location: "United Kingdom"
@@ -283,8 +286,9 @@ sources:
     time_range: "Past month"     # freshness (fewer, fresher records = lower cost)
     max_age_days: 30
     max_wait: 480                # seconds to wait for the async scrape (poll)
-  indeed:                        # STRUCTURED Indeed Jobs via Bright Data Web Scraper API (real employer/
-    enabled: true                # location/date). Activates only when BRIGHTDATA_INDEED_DATASET is set; else skips.
+  indeed:                        # STRUCTURED Indeed Jobs via Bright Data Web Scraper API.
+    enabled: false               # OFF - needs BD Web Scraper activation; Indeed now covered via SERP
+                                 # (site:uk.indeed.com in search_domains). Flip true after activating the dataset.
     keywords: ["data scientist", "marketing data scientist", "data analyst", "senior data analyst",
                "analytics engineer", "machine learning engineer", "AI engineer"]
     location: "United Kingdom"

@@ -61,10 +61,13 @@ class BrightDataLinkedInSource(Source):
                               params={"dataset_id": self.dataset_id, "type": "discover_new",
                                       "discover_by": "keyword", "format": "json", "limit_per_input": 50})
             if r.status_code not in (200, 202):
-                return SourceResult(self.name, status="error", message=f"trigger HTTP {r.status_code}: {r.text[:90]}")
-            snap = r.json().get("snapshot_id")
+                return SourceResult(self.name, status="error", message=f"trigger HTTP {r.status_code}: {r.text[:300]}")
+            try:
+                snap = r.json().get("snapshot_id")
+            except Exception:
+                return SourceResult(self.name, status="error", message=f"trigger non-JSON: {r.text[:300]}")
             if not snap:
-                return SourceResult(self.name, status="error", message="no snapshot_id returned")
+                return SourceResult(self.name, status="error", message=f"no snapshot_id: {r.text[:250]}")
         except requests.RequestException as exc:
             return SourceResult(self.name, status="error", message=f"trigger error: {str(exc)[:90]}")
 

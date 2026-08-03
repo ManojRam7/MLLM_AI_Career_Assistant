@@ -57,18 +57,22 @@ class BrightDataIndeedSource(Source):
         if not (self.api_key and self.dataset_id):
             return SourceResult(self.name, status="skipped",
                                 message="no BRIGHTDATA_API_KEY / Indeed dataset_id set")
-        # discover-by-keyword input for the Indeed dataset (UK domain, recent)
-        payload = [{"keyword_search": k, "location": self.location, "country": self.country,
-                    "domain": self.domain, "date_posted": self.date_posted} for k in self.keywords]
+        # discover-by-keyword input for the Indeed dataset. Keep to the CORE fields the dataset
+        # validates - extra fields (domain / date_posted enum) trigger 'Invalid input provided'.
+        payload = [{"keyword_search": k, "location": self.location, "country": self.country}
+                   for k in self.keywords]
         try:
             r = requests.post(TRIGGER, headers=self._h(), json=payload, timeout=60,
                               params={"dataset_id": self.dataset_id, "type": "discover_new",
                                       "discover_by": "keyword", "format": "json", "limit_per_input": 50})
             if r.status_code not in (200, 202):
-                return SourceResult(self.name, status="error", message=f"trigger HTTP {r.status_code}: {r.text[:90]}")
-            snap = r.json().get("snapshot_id")
+                return SourceResult(self.name, status="error", message=f"trigger HTTP {r.status_code}: {r.text[:300]}")
+            try:
+                snap = r.json().get("snapshot_id")
+            except Exception:
+                return SourceResult(self.name, status="error", message=f"trigger non-JSON: {r.text[:300]}")
             if not snap:
-                return SourceResult(self.name, status="error", message="no snapshot_id returned")
+                return SourceResult(self.name, status="error", message=f"no snapshot_id: {r.text[:250]}")
         except requests.RequestException as exc:
             return SourceResult(self.name, status="error", message=f"trigger error: {str(exc)[:90]}")
 

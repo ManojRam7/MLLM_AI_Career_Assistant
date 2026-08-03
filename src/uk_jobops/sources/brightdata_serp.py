@@ -139,7 +139,9 @@ _AGE = re.compile(r"(\d+(?:\.\d+)?)\+?\s*(day|week|month|year)s?\s+ago", re.I)
 _TRUSTED = re.compile(
     r"(reed\.co\.uk|linkedin\.com|civilservicejobs\.service\.gov\.uk|jobs\.nhs\.uk|greenhouse\.io|"
     r"lever\.co|ashbyhq\.com|smartrecruiters\.com|myworkdayjobs\.com|workable\.com|recruitee\.com|"
-    r"personio\.|eightfold\.ai)", re.I)
+    r"personio\.|eightfold\.ai|"
+    r"indeed\.co\.uk|indeed\.com|totaljobs\.com|cv-library\.co\.uk|"
+    r"jobs\.theguardian\.com|jobserve\.com|technojobs\.co\.uk)", re.I)
 # these are UK-only by definition -> no need to insist on a UK signal in the snippet
 _UK_SAFE = re.compile(r"(reed\.co\.uk|civilservicejobs\.service\.gov\.uk|jobs\.nhs\.uk)", re.I)
 _UK_CITY = re.compile(
