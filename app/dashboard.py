@@ -45,6 +45,15 @@ def get_store(url: str) -> Store:
     return s
 
 
+@st.cache_resource(show_spinner=False)
+def get_tracker(url: str):
+    """Isolated application-tracker store (separate `applications` table; never touched by the pipeline)."""
+    from uk_jobops.tracker import Tracker
+    t = Tracker(url)
+    t.init_schema()
+    return t
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def load_jobs(url: str) -> pd.DataFrame:
     import datetime as _dt
@@ -291,9 +300,10 @@ def render_kanban(tracked, url, kp):
         st.rerun()
 
 
-(tab_overview, tab_jobs, tab_source, tab_pipeline, tab_coverage, tab_bucket, tab_board, tab_cvs) = st.tabs(
+(tab_overview, tab_jobs, tab_source, tab_pipeline, tab_coverage, tab_bucket, tab_board,
+ tab_apps, tab_cvs) = st.tabs(
     ["📊 Overview", "💼 Jobs", "🗂️ By Source", "⚙️ Runs & LLMs", "🔎 Search Coverage",
-     "🏢 Bucket List", "📋 Tracker", "📝 Recommendations"])
+     "🏢 Bucket List", "📌 Shortlist", "✅ My Applications", "📝 Recommendations"])
 
 # ---------------------------------------------------------------- OVERVIEW
 with tab_overview:
@@ -499,8 +509,9 @@ with tab_source:
 
 # --------------------------------------------------------------- TRACKER (KANBAN)
 with tab_board:
-    st.subheader("📋 Application tracker")
-    st.caption("Move jobs through your pipeline — change a card's stage, tick 🗑 to delete, then **Save board**.")
+    st.subheader("📌 Shortlist — jobs the engine found that you're tracking")
+    st.caption("Pipeline-discovered roles you've shortlisted. For logging jobs you've actually applied "
+               "to, use the **✅ My Applications** tab (that's your durable, isolated tracker).")
     ca, cb = st.columns(2)
     with ca.expander("➕ Add a job manually"):
         with st.form("add_manual", clear_on_submit=True):
@@ -556,13 +567,14 @@ with tab_board:
 
 # --------------------------------------------------------------- RECOMMENDATIONS
 with tab_cvs:
-    st.subheader("📝 ATS tailoring recommendations & cover letters")
-    st.caption("For each high-fit job: how to tailor every CV section to pass that ATS, plus a ready cover "
-               "letter in your format. Copy the text straight into your CV/letter — no documents to manage.")
+    st.subheader("📝 CV keywords per job (+ deep tailoring for top picks)")
+    st.caption("2.0: for EVERY job you get the exact ATS keywords to add to your CV for that role "
+               "(green = you already evidence them, gaps = the role wants them but you don't). The full "
+               "section-by-section audit + cover letter are generated for the highest-fit picks.")
     recs = load_recs(url)
     if not recs:
-        st.info("No recommendations yet. The pipeline writes these for the highest-fit jobs each run "
-                "(fit ≥ tailor threshold). Run the pipeline, then refresh.")
+        st.info("No jobs yet. Keywords are written for every job each run (zero LLM cost); the deep audit "
+                "is written for the highest-fit picks. Run the pipeline, then refresh.")
     else:
         cat_pick = st.multiselect("Category", ["data-science", "ai-engineer", "data-analysis"], key="rec_cat")
         rows = [r for r in recs if not cat_pick or r.get("category") in cat_pick]
@@ -574,9 +586,13 @@ with tab_cvs:
             with st.expander(f"{dot} {star}{r['title']} · {r['company']}  —  fit {fit}"):
                 if r.get("url"):
                     st.markdown(f"[Open job posting]({r['url']})")
+                if r.get("cv_keywords"):
+                    st.markdown(f"**🔑 {r['cv_keywords']}**")   # keyword-first (the 2.0 headline)
                 t1, t2 = st.tabs(["🧩 CV recommendations", "✉️ Cover letter"])
                 with t1:
-                    st.markdown(r.get("recommendations") or "_No recommendations text._")
+                    st.markdown(r.get("recommendations")
+                                or "_Keyword list above. Full section-by-section audit is generated for "
+                                   "higher-fit picks._")
                 with t2:
                     cover = r.get("cover_text") or ""
                     if cover:
@@ -615,6 +631,13 @@ with tab_coverage:
         st.info("No runs logged yet.")
     else:
         allruns = [(_loc(r.get("run_at")), _sjc(r)) for _, r in runs.iterrows()]
+        # 2.0 RUN REPORT — the detailed per-run message (same content as Telegram), front and centre.
+        latest_report = next((s.get("report") for _, s in allruns if s.get("report")), None)
+        if latest_report:
+            from uk_jobops.report import report_markdown
+            with st.expander("📋 Latest run report — bucket list, every source, best jobs", expanded=True):
+                st.markdown(report_markdown(latest_report))
+            st.divider()
         # headline: the most recent full/all-company run
         full = [(t, s) for t, s in allruns if s.get("companies_in_sector")]
         if full:
@@ -650,9 +673,9 @@ with tab_coverage:
                 srows.append({" ": dot, "source": x.get("source", "?"), "status": stt,
                               "jobs": x.get("count", 0), "detail": (x.get("message") or "")[:160]})
             st.dataframe(pd.DataFrame(srows), hide_index=True, width="stretch")
-            st.caption("If 'LinkedIn Jobs (Bright Data)' or 'Indeed (Bright Data)' say **skipped** the "
-                       "dataset secret isn't set; **error** means the input schema needs a tweak — send me "
-                       "the detail text.")
+            st.caption("'Google/SERP (Bright Data)' is the main engine (LinkedIn + Reed + Totaljobs + "
+                       "CV-Library + Indeed via Google). The structured 'LinkedIn Jobs'/'Indeed' scrapers "
+                       "stay **skipped** until the Bright Data Web Scraper product is activated.")
 
         # trend table + charts across all runs
         rows = []
@@ -746,4 +769,123 @@ with tab_bucket:
             view[cols].rename(columns={"has_jobs": " ", "company_name": "company"}),
             hide_index=True, width="stretch", height=560,
             column_config={"careers_url": st.column_config.LinkColumn("careers", display_text="open")})
+
+
+# --------------------------------------------------------------- MY APPLICATIONS (isolated tracker)
+with tab_apps:
+    import datetime as _dta
+
+    from uk_jobops.tracker import STATUS_LABEL, STATUSES, day_name, rows_to_csv, rows_to_ics
+
+    def _rerun():
+        try:
+            st.rerun()
+        except Exception:
+            st.experimental_rerun()
+
+    _COUNTRIES = ["United Kingdom", "Ireland", "Germany", "Netherlands", "France", "Spain", "Switzerland",
+                  "Sweden", "Poland", "Portugal", "Italy", "Belgium", "Luxembourg", "Denmark",
+                  "United States", "Canada", "Australia", "New Zealand", "UAE", "Singapore", "Malaysia",
+                  "Russia", "India", "Other"]
+
+    st.subheader("✅ My Applications — your personal tracker")
+    st.caption("A private, durable log of every job you actually apply to — with the day, date and "
+               "country. This lives in its OWN database table, completely separate from the search "
+               "pipeline, so nothing the engine does can ever change or lose it.")
+
+    trk = get_tracker(url)
+    apps = trk.list_all()
+
+    # ---- metrics ----
+    from uk_jobops.tracker import board_stats
+    stt = board_stats(apps)
+    mc = st.columns(7)
+    mc[0].metric("Total", stt["total"])
+    for i, s in enumerate(STATUSES):
+        mc[i + 1].metric(STATUS_LABEL[s], stt.get(s, 0))
+
+    # ---- add a new application ----
+    with st.expander("➕ Add an application", expanded=not apps):
+        with st.form("add_app", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            company = c1.text_input("Company *")
+            role = c2.text_input("Role title *")
+            status = c3.selectbox("Stage", STATUSES, format_func=lambda s: STATUS_LABEL[s])
+            c4, c5, c6 = st.columns(3)
+            country_sel = c4.selectbox("Country", _COUNTRIES, index=0)
+            country_other = c5.text_input("…or type country")
+            city = c6.text_input("City")
+            c7, c8, c9 = st.columns(3)
+            applied = c7.date_input("Applied on", value=_dta.date.today())
+            salary = c8.text_input("Salary (optional)")
+            url_in = c9.text_input("Job link (optional)")
+            c10, c11 = st.columns(2)
+            next_action = c10.text_input("Next action (e.g. 'Coding test')")
+            next_date = c11.date_input("Next action date", value=None)
+            notes = st.text_area("Notes", height=70)
+            submitted = st.form_submit_button("Add application", type="primary")
+            if submitted:
+                if not company.strip() or not role.strip():
+                    st.warning("Company and role title are required.")
+                else:
+                    trk.add(company=company.strip(), role_title=role.strip(),
+                            country=(country_other.strip() or country_sel), city=city.strip(),
+                            source_url=url_in.strip(), status=status, applied_date=applied,
+                            salary=salary.strip(), notes=notes.strip(),
+                            next_action=next_action.strip(),
+                            next_action_date=(next_date or None))
+                    st.success(f"Added {role.strip()} at {company.strip()}.")
+                    _rerun()
+
+    # ---- export / backup ----
+    ec1, ec2, ec3 = st.columns([1, 1, 4])
+    ec1.download_button("⬇️ CSV backup", rows_to_csv(apps), file_name="applications.csv",
+                        mime="text/csv", disabled=not apps)
+    ec2.download_button("📅 Calendar (.ics)", rows_to_ics(apps), file_name="applications.ics",
+                        mime="text/calendar", disabled=not apps)
+    ec3.caption("CSV → save to Google Drive · .ics → import into Google/Apple Calendar "
+                "(interview & next-action dates become all-day events).")
+
+    st.divider()
+
+    # ---- kanban board ----
+    if not apps:
+        st.info("No applications yet — add your first one above.")
+    else:
+        by = {s: [a for a in apps if a.get("status") == s] for s in STATUSES}
+        cols = st.columns(len(STATUSES))
+        for ci, s in enumerate(STATUSES):
+            with cols[ci]:
+                st.markdown(f"**{STATUS_LABEL[s]}**  ·  {len(by[s])}")
+                for a in by[s]:
+                    aid = a["id"]
+                    with st.container(border=True):
+                        st.markdown(f"**{a.get('company','')}**")
+                        st.caption(a.get("role_title", ""))
+                        loc = " · ".join(x for x in [a.get("country", ""), a.get("city", "")] if x)
+                        when = str(a.get("applied_date") or "")[:10]
+                        meta = " · ".join(x for x in [loc, (f"{day_name(when)} {when}" if when else "")] if x)
+                        if meta:
+                            st.caption(meta)
+                        if a.get("next_action"):
+                            nd = str(a.get("next_action_date") or "")[:10]
+                            st.caption(f"⏭ {a['next_action']}" + (f" ({nd})" if nd else ""))
+                        if a.get("source_url"):
+                            st.markdown(f"[open]({a['source_url']})")
+                        # move between stages
+                        i = STATUSES.index(s)
+                        b1, b2, b3 = st.columns(3)
+                        if b1.button("◀", key=f"l{aid}", disabled=i == 0, help="Move back"):
+                            trk.set_status(aid, STATUSES[i - 1]); _rerun()
+                        if b2.button("▶", key=f"r{aid}", disabled=i == len(STATUSES) - 1, help="Advance"):
+                            trk.set_status(aid, STATUSES[i + 1]); _rerun()
+                        with b3.popover("✎") if hasattr(st, "popover") else st.expander("✎ edit"):
+                            ne = st.text_input("Next action", a.get("next_action", ""), key=f"na{aid}")
+                            nde = st.date_input("Next date", value=None, key=f"nd{aid}")
+                            nt = st.text_area("Notes", a.get("notes", ""), key=f"nt{aid}", height=70)
+                            if st.button("Save", key=f"sv{aid}"):
+                                trk.update(aid, next_action=ne, notes=nt,
+                                           next_action_date=(nde or None)); _rerun()
+                            if st.button("🗑 Delete", key=f"dl{aid}"):
+                                trk.delete(aid); _rerun()
 

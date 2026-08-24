@@ -1,4 +1,15 @@
 company_name,sector,industry,careers_url,typical_roles,tier
+Department for Work and Pensions,Government & Public Sector,Government / Digital,https://careers.dwp.gov.uk/,Data Science; Statistics; Operational Research; Data Analysis,top100
+National Gas,"Energy, Transport & Industrial",Energy / Utilities / Transport / Manufacturing,https://www.nationalgas.com/careers,,top100
+Deutsche Bank,Financial Services,Banking / Markets,https://careers.db.com/,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,top100
+Benivo,Technology & Telecoms,,https://www.benivo.com/careers,,top100
+Next,"Retail, Consumer & Media",Retail,https://careers.next.co.uk/,,top100
+The AA,"Energy, Transport & Industrial",Motoring / Insurance Services,https://www.theaacareers.co.uk/,Data Science; Data Analysis; Pricing/Actuarial Analytics; AI/ML,top100
+Sainsbury's,"Retail, Consumer & Media",Retail / Grocery,https://www.sainsburys.jobs/,Customer/Product Analytics; Forecasting; Pricing; Marketing Science,top100
+Capgemini,Consulting & IT Services,Consulting / Technology Services,https://www.capgemini.com/gb-en/careers/,Data & AI Consulting; Data Science; BI/Analytics; ML Engineering,top100
+Aviva,Financial Services,Insurance / Asset Management,https://careers.aviva.co.uk/,Pricing/Risk Analytics; Data Science; BI; AI/ML,top100
+Trainline,"Energy, Transport & Industrial",Travel E-commerce; Product analytics / ML,https://www.thetrainline.com/careers,,top100
+Goldman Sachs,Financial Services,Banking / Markets,https://higher.gs.com/,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,top100
 Bank of England,Financial Services,Central Bank / Regulator,https://bankofengland.wd3.myworkdayjobs.com/BoE_Careers,Data Science; Risk/Fraud Analytics; Data Analysis; AI/ML,top100
 Financial Conduct Authority (FCA),Financial Services,Financial Regulator,https://fca.wd3.myworkdayjobs.com/FCA,Data Science; Risk/Fraud Analytics; Data Analysis; AI/ML,top100
 Lloyds Banking Group,Financial Services,Banking,https://www.lloydsbankinggroup.com/careers.html,Data Science; Risk/Fraud Analytics; Data Analysis; AI/ML,top100
@@ -9,10 +20,8 @@ Santander UK,Financial Services,Banking,https://www.santanderjobs.co.uk/,Data Sc
 Nationwide Building Society,Financial Services,Banking / Building Society,https://www.nationwide-jobs.co.uk/,Data Science; Risk/Fraud Analytics; Data Analysis; AI/ML,master
 Standard Chartered,Financial Services,Banking,https://www.sc.com/en/careers/,Data Science; Risk/Fraud Analytics; Data Analysis; AI/ML,master
 JPMorganChase,Financial Services,Banking / Markets,https://careers.jpmorgan.com/,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,top100
-Goldman Sachs,Financial Services,Banking / Markets,https://higher.gs.com/,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,master
 Citi,Financial Services,Banking / Markets,https://jobs.citi.com/,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,master
 Morgan Stanley,Financial Services,Banking / Markets,https://www.morganstanley.com/people-opportunities,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,master
-Deutsche Bank,Financial Services,Banking / Markets,https://careers.db.com/,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,master
 UBS,Financial Services,Banking / Wealth Management,https://www.ubs.com/global/en/careers.html,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,master
 BNP Paribas,Financial Services,Banking / Markets,https://group.bnpparibas/en/careers,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,master
 Capital One UK,Financial Services,Consumer Finance,https://www.capitalonecareers.co.uk/,Data Science; Risk/Fraud Analytics; Data Analysis; AI/ML,top100
@@ -29,7 +38,6 @@ BlackRock,Financial Services,Asset Management,https://careers.blackrock.com/,Dat
 Legal & General,Financial Services,Insurance / Asset Management,https://careers.legalandgeneral.com/,Pricing/Risk Analytics; Data Science; BI; AI/ML,master
 Schroders,Financial Services,Asset Management,https://www.schroders.com/en/global/careers/,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,master
 Fidelity International,Financial Services,Asset Management,https://careers.fidelityinternational.com/,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,master
-Aviva,Financial Services,Insurance / Asset Management,https://careers.aviva.co.uk/,Pricing/Risk Analytics; Data Science; BI; AI/ML,top100
 M&G,Financial Services,Asset Management / Insurance,https://www.mandg.com/careers,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,master
 S&P Global,Financial Services,Financial Data / Ratings,https://www.spglobal.com/en/careers,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,master
 Fitch Ratings,Financial Services,Financial Data / Ratings,https://www.fitch.group/careers,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,master
@@ -63,7 +71,6 @@ Deloitte,Consulting & IT Services,Professional Services,https://apply.deloitte.c
 PwC,Consulting & IT Services,Professional Services,https://www.pwc.co.uk/careers.html,Data & AI Consulting; Data Science; BI/Analytics; ML Engineering,top100
 EY,Consulting & IT Services,Professional Services,https://www.ey.com/en_uk/careers,Data & AI Consulting; Data Science; BI/Analytics; ML Engineering,top100
 KPMG,Consulting & IT Services,Professional Services,https://kpmgcareers.co.uk/,Data & AI Consulting; Data Science; BI/Analytics; ML Engineering,top100
-Capgemini,Consulting & IT Services,Consulting / Technology Services,https://www.capgemini.com/gb-en/careers/,Data & AI Consulting; Data Science; BI/Analytics; ML Engineering,top100
 Cognizant,Consulting & IT Services,Technology Services,https://careers.cognizant.com/global/en,Data & AI Consulting; Data Science; BI/Analytics; ML Engineering,top100
 Tata Consultancy Services,Consulting & IT Services,Technology Services,https://www.tcs.com/careers,Data & AI Consulting; Data Science; BI/Analytics; ML Engineering,top100
 Infosys,Consulting & IT Services,Technology Services,https://www.infosys.com/careers/,Data & AI Consulting; Data Science; BI/Analytics; ML Engineering,top100
@@ -116,7 +123,6 @@ British Airways,"Energy, Transport & Industrial",Aviation,https://careers.ba.com
 Civil Service Jobs,Government & Public Sector,National Government Job Portal,https://www.civilservicejobs.service.gov.uk/csr/index.cgi,Data Science; Statistics; Operational Research; Data Analysis,top100
 Office for National Statistics,Government & Public Sector,Statistics / Government,https://careers.ons.gov.uk/,Data Science; Statistics; Operational Research; Data Analysis,top100
 HM Revenue & Customs,Government & Public Sector,Government,https://www.civil-service-careers.gov.uk/departments/working-for-hm-revenue-and-customs/,Data Science; Statistics; Operational Research; Data Analysis,master
-Department for Work and Pensions,Government & Public Sector,Government / Digital,https://careers.dwp.gov.uk/,Data Science; Statistics; Operational Research; Data Analysis,top100
 Home Office,Government & Public Sector,Government / Digital,https://careers.homeoffice.gov.uk/professions/digital-and-data/,Data Science; Statistics; Operational Research; Data Analysis,master
 UK Health Security Agency,Government & Public Sector,Public Health / Government,https://www.civil-service-careers.gov.uk/departments/working-for-the-uk-health-security-agency/,Data Science; Statistics; Operational Research; Data Analysis,master
 Ofgem,Government & Public Sector,Energy Regulator,https://www.ofgem.gov.uk/about-us/careers-ofgem,Data Science; Statistics; Operational Research; Data Analysis,master
@@ -134,7 +140,6 @@ Kantar,"Retail, Consumer & Media",MMM / insights,https://www.kantar.com/careers,
 GfK,"Retail, Consumer & Media",Retail / FMCG / Marketing Analytics,https://www.google.com/search?q=GfK+careers+data+analyst+data+scientist+UK,,master
 Ipsos,"Retail, Consumer & Media",Retail / FMCG / Marketing Analytics,https://www.google.com/search?q=Ipsos+careers+data+analyst+data+scientist+UK,,master
 YouGov,"Retail, Consumer & Media",Retail / FMCG / Marketing Analytics,https://www.google.com/search?q=YouGov+careers+data+analyst+data+scientist+UK,,master
-Trainline,"Energy, Transport & Industrial",Travel E-commerce; Product analytics / ML,https://www.thetrainline.com/careers,,master
 Deliveroo,"Retail, Consumer & Media",Food Tech,https://careers.deliveroo.co.uk/,,master
 Just Eat UK,"Retail, Consumer & Media",Food Tech,https://www.google.com/search?q=just+eat+uk+careers+data+scientist+UK,,master
 Rightmove,"Energy, Transport & Industrial",Property Tech,https://plc.rightmove.co.uk/careers/,,master
@@ -214,7 +219,6 @@ Anglian Water,"Energy, Transport & Industrial",Utilities; Data analytics,https:/
 WPP,"Retail, Consumer & Media",Advertising / Data,https://www.wpp.com/people/careers,,master
 Dentsu,"Retail, Consumer & Media",Advertising / Analytics,https://www.dentsu.com/careers,,master
 Havas,"Retail, Consumer & Media",Advertising / Analytics,https://www.havas.com/careers,,master
-Next,"Retail, Consumer & Media",Retail,https://careers.next.co.uk/,,master
 Boots,"Retail, Consumer & Media",Retail,https://www.boots.jobs/,,master
 ASOS,"Retail, Consumer & Media",E-commerce,https://www.asoscareers.com/,,master
 Aldi,"Retail, Consumer & Media",Retail,https://www.google.com/search?q=aldi+uk+careers+data+scientist+UK,,master
@@ -281,7 +285,6 @@ MHRA,Government & Public Sector,Medicines regulator,https://www.gov.uk/governmen
 Moderna UK,"Insurance, Health & Pharma",Pharma,https://www.modernatx.com/en-US/careers,,master
 Drax Group,"Energy, Transport & Industrial",Energy,https://www.drax.com/careers/,,master
 UK Power Networks,"Energy, Transport & Industrial",Energy / Utilities / Transport / Manufacturing,https://www.google.com/search?q=UK+Power+Networks+careers+data+analyst+data+scientist+UK,,master
-National Gas,"Energy, Transport & Industrial",Energy / Utilities / Transport / Manufacturing,https://www.google.com/search?q=National+Gas+careers+data+analyst+data+scientist+UK,,master
 Cadent Gas,"Energy, Transport & Industrial",Utilities,https://cadentgas.com/careers,,master
 Schneider Electric,"Energy, Transport & Industrial",Energy / Utilities / Transport / Manufacturing,https://www.google.com/search?q=Schneider+Electric+careers+data+analyst+data+scientist+UK,,master
 Honeywell UK,"Energy, Transport & Industrial",Energy / Utilities / Transport / Manufacturing,https://www.google.com/search?q=Honeywell+UK+careers+data+analyst+data+scientist+UK,,master
@@ -308,7 +311,6 @@ Companies House,Government & Public Sector,Government / Public Sector,https://ww
 HM Land Registry,Government & Public Sector,Government / Public Sector,https://www.civilservicejobs.service.gov.uk/csr/index.cgi,,master
 National Crime Agency,Government & Public Sector,Government / Public Sector,https://www.civilservicejobs.service.gov.uk/csr/index.cgi,,master
 National Highways,Government & Public Sector,Government / Public Sector,https://www.civilservicejobs.service.gov.uk/csr/index.cgi,,master
-Benivo,Technology & Telecoms,,https://www.benivo.com/careers,,master
 Netflix,Technology & Telecoms,,https://jobs.netflix.com,,master
 Fujitsu,Consulting & IT Services,,https://www.fujitsu.com/uk/about/careers/,,master
 Bumble,Technology & Telecoms,,https://bumble.com/en/careers,,master
@@ -351,6 +353,5 @@ GroupM,"Retail, Consumer & Media",Marketing Analytics / MMM,https://www.groupm.c
 EssenceMediacom,"Retail, Consumer & Media",Marketing Analytics / MMM,https://www.essencemediacom.com/careers,Marketing Data Science; MMM,master
 Moody's,Financial Services,Financial Data / Ratings,https://careers.moodys.com/,Data Science; Market/Risk Analytics; AI/ML; Data Engineering,master
 Checkout.com,Financial Services,Payments / FinTech,https://www.checkout.com/careers,Data Science; Product/Risk Analytics; AI/ML; Analytics Engineering,master
-Sainsbury's,"Retail, Consumer & Media",Retail / Grocery,https://www.sainsburys.jobs/,Customer/Product Analytics; Forecasting; Pricing; Marketing Science,top100
 E.ON UK,"Energy, Transport & Industrial",Energy / Utilities,https://careers.eon.com/uk/,Data Science; Forecasting; Operational/Asset Analytics; AI,master
 Rolls-Royce,"Energy, Transport & Industrial",Aerospace / Engineering,https://careers.rolls-royce.com/,Data Science; Predictive Maintenance; Operational Analytics; AI,top100

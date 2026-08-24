@@ -134,3 +134,19 @@ def send_job_alerts(rows: list[dict], token: str, chat_id: str, name: str = "the
         elif not err:
             err = detail
     return sent, err
+
+
+def send_best_jobs(rows: list[dict], token: str, chat_id: str, name: str = "there") -> tuple[int, str]:
+    """2.0: send the best jobs of the run, each rendered with its CV keywords (via report.py).
+    Returns (count_sent, first_error)."""
+    if not (token and chat_id and rows):
+        return 0, ""
+    from .report import best_job_telegram
+    sent, err = 0, ""
+    for r in rows:
+        ok, detail = send_message(token, chat_id, best_job_telegram(r, name))
+        if ok:
+            sent += 1
+        elif not err:
+            err = detail
+    return sent, err

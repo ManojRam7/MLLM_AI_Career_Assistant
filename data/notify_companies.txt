@@ -1,6 +1,21 @@
 # Telegram alerts fire ONLY for these employers (plus government via the _GOV regex in notify.py).
 # Auto-generated from data/companies_master.csv (curated top-employer whitelist). Edit freely.
 
+
+# --- PRIORITY (Rams 2.0 - always alert + dedicated search) ---
+Department for Work and Pensions
+DWP
+National Gas
+Deutsche Bank
+Benivo
+Next
+The AA
+Sainsbury's
+Capgemini
+Aviva
+Trainline
+Goldman Sachs
+
 # --- Consulting & IT Services ---
 Accenture
 Atos

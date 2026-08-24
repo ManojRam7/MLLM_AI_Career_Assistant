@@ -58,6 +58,10 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS category TEXT DEFAULT '';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS sector TEXT DEFAULT '';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS recommendations TEXT;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cover_text TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cv_keywords TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS country TEXT DEFAULT '';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS visa_sponsorship TEXT DEFAULT '';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS geo_score INTEGER DEFAULT 0;
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_fit_idx ON jobs(fit_score DESC);
 
@@ -169,7 +173,7 @@ class Store:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).replace(microsecond=0).isoformat()
         return self._rows(
             "SELECT dedupe_key,title,company,location,locations,fit_score,fit_reasoning,url,in_bucket,"
-            "bucket_tier,category,sector,first_seen_at,posted_date "
+            "bucket_tier,category,sector,cv_keywords,first_seen_at,posted_date "
             "FROM jobs WHERE notified=FALSE AND is_target=TRUE AND fit_score >= %s AND first_seen_at >= %s "
             "ORDER BY first_seen_at DESC, fit_score DESC LIMIT %s", (min_fit, cutoff, limit))
 
@@ -241,9 +245,10 @@ class Store:
             cur.execute("DELETE FROM pipeline_runs")
         return n
 
-    def purge_spam(self) -> int:
-        """Delete already-stored non-UK / expired / removed postings (title+description+location
-        signals). Skips manual and tracked jobs. Idempotent - runs every pass."""
+    def purge_spam(self, keep_nonuk: bool = False) -> int:
+        """Delete already-stored expired / removed / stale-aggregator postings. When keep_nonuk is
+        False (UK-only mode) it ALSO deletes non-UK rows; when True (global search) non-UK rows are
+        KEPT (ranked by geo_score instead). Skips manual and tracked jobs. Idempotent - runs each pass."""
         expired = (r"(no longer (accepting|available)|has been (filled|removed)|was removed|position "
                    r"(has been |is )?filled|applications? (are |have )?closed|\yexpired\y|"
                    r"this (job|vacancy|position) (has|was) (been )?(removed|filled|closed|expired))")
@@ -262,16 +267,19 @@ class Store:
         agg = (r"(builtin|bebee|expertini|welcometothejungle|otta\.|datasciencejobs|stacksignal|"
                r"efinancialcareers|canarywharfian|bulldogjob|alooba|glassdoor|artificialintelligencejobs|"
                r"harnham|jobrapido|neuvoo|talent\.com|jooble|whatjobs|opendatascience|careerjet|jobsora)")
+        nonuk_clause = ("""
+            OR (
+                (title || ' ' || coalesce(description,'') || ' ' || coalesce(location,'')) ~* %s
+                AND (title || ' ' || coalesce(description,'') || ' ' || coalesce(location,'')) !~* %s
+            )""" if not keep_nonuk else "")
         sql = f"""
         DELETE FROM jobs WHERE is_custom = FALSE AND tracked = FALSE AND (
             url ~* %s
             OR (title || ' ' || coalesce(description,'')) ~* %s
-            OR (
-                (title || ' ' || coalesce(description,'') || ' ' || coalesce(location,'')) ~* %s
-                AND (title || ' ' || coalesce(description,'') || ' ' || coalesce(location,'')) !~* %s
-            ))"""
+            {nonuk_clause})"""
+        params = (agg, expired) + ((nonuk, uk) if not keep_nonuk else ())
         with self.conn.cursor() as cur:
-            cur.execute(sql, (agg, expired, nonuk, uk))
+            cur.execute(sql, params)
             return cur.rowcount
 
     def purge_expired(self, max_days: int = 60) -> int:
@@ -324,6 +332,14 @@ class Store:
             cols = [c.name for c in cur.description]
             return [dict(zip(cols, r)) for r in cur.fetchall()]
 
+    def jobs_needing_enrichment(self, limit: int = 800) -> list[dict[str, Any]]:
+        """Every job still missing CV keywords OR geo tagging (country/visa). Deterministic backfill,
+        zero LLM cost, runs each pass so ALL jobs — new and historic — get keywords + country + visa."""
+        return self._rows(
+            "SELECT dedupe_key,title,company,location,locations,description FROM jobs "
+            "WHERE cv_keywords IS NULL OR cv_keywords = '' OR country IS NULL OR country = '' "
+            "ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, fit_score DESC LIMIT %s", (limit,))
+
     def jobs_needing_score(self, limit: int = 40) -> list[dict[str, Any]]:
         return self._rows(
             "SELECT dedupe_key,title,company,location,description FROM jobs "
@@ -346,16 +362,40 @@ class Store:
     def all_jobs(self, limit: int = 2000) -> list[dict[str, Any]]:
         return self._rows(
             "SELECT dedupe_key,title,company,location,locations,source,in_bucket,bucket_tier,category,sector,fit_score,seniority,status,"
-            "tracked,is_custom,notes,applied_at,url,cv_path,cover_path,fit_reasoning,ghost_flag,posted_date,first_seen_at "
-            "FROM jobs ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, fit_score DESC, first_seen_at DESC LIMIT %s",
+            "tracked,is_custom,notes,applied_at,url,cv_path,cover_path,fit_reasoning,ghost_flag,cv_keywords,"
+            "country,visa_sponsorship,geo_score,posted_date,first_seen_at "
+            "FROM jobs ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, geo_score DESC, fit_score DESC, first_seen_at DESC LIMIT %s",
             (limit,))
 
     def recommendations_list(self, limit: int = 200) -> list[dict[str, Any]]:
         return self._rows(
             "SELECT dedupe_key,title,company,category,location,fit_score,in_bucket,bucket_tier,"
-            "fit_reasoning,url,recommendations,cover_text "
-            "FROM jobs WHERE recommendations IS NOT NULL "
+            "fit_reasoning,url,recommendations,cover_text,cv_keywords "
+            "FROM jobs WHERE recommendations IS NOT NULL OR cv_keywords IS NOT NULL "
             "ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, fit_score DESC LIMIT %s", (limit,))
+
+    def best_jobs(self, *, limit: int = 12, max_age_days: int = 3, min_fit: int = 0,
+                  fresh_only: bool = True) -> list[dict[str, Any]]:
+        """The best jobs for the run report / Telegram, ranked by IMPORTANCE:
+        top100 bucket > any bucket > fit score > recency. Prefers fresh (last few days) roles but
+        the caller can widen the window if a run finds nothing fresh, so alerts are never empty."""
+        from datetime import timedelta
+        params: list[Any] = []
+        where = ["is_target=TRUE"]
+        if min_fit:
+            where.append("fit_score >= %s"); params.append(min_fit)
+        if fresh_only:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).replace(microsecond=0).isoformat()
+            where.append("first_seen_at >= %s"); params.append(cutoff)
+        params.append(limit)
+        return self._rows(
+            "SELECT dedupe_key,title,company,location,locations,fit_score,fit_reasoning,url,in_bucket,"
+            "bucket_tier,category,sector,cv_keywords,country,visa_sponsorship,geo_score,notified,"
+            "posted_date,first_seen_at "
+            "FROM jobs WHERE " + " AND ".join(where) +
+            # importance: bucket-list first, then UK>EU>world + sponsor (geo_score), then fit, then fresh
+            " ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, geo_score DESC, fit_score DESC, "
+            "first_seen_at DESC LIMIT %s", tuple(params))
 
     def status_counts(self) -> dict[str, int]:
         return {r["status"]: r["n"] for r in self._rows("SELECT status, COUNT(*) n FROM jobs GROUP BY status")}

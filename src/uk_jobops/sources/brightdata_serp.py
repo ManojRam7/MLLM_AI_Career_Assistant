@@ -214,7 +214,7 @@ def _is_job(url: str, title: str) -> bool:
 
 
 class BrightDataSerpSource(Source):
-    name = "LinkedIn (Bright Data)"      # SERP scoped to linkedin.com/jobs (+ reed) — LinkedIn-first
+    name = "Google/SERP (Bright Data)"   # full Google sweep: LinkedIn + Reed + Totaljobs + CV-Library
 
     def __init__(self, api_key, zone="serp", *, sector=None, run_broad=True,
                  extra_queries=None, site_queries=None, search_domains=None,
@@ -242,21 +242,32 @@ class BrightDataSerpSource(Source):
         if not self.api_key:
             return SourceResult(self.name, status="skipped", message="no BRIGHTDATA_API_KEY set")
         board = self._board_filter()
-        broad_q: list[str] = []
-        if self.run_broad:
-            broad_q = [f"{q} {board}" for q in (self.extra_queries + list(queries[:2]))] + self.site_queries
-            broad_q = list(dict.fromkeys(broad_q))[:self.max_queries]
-        else:
-            broad_q = list(self.site_queries)        # gov site: queries still run on a gov sector run
+        # 2.0 COVERAGE: the broad market sweep + gov queries ALWAYS run (even on a sector run), so a
+        # Google-wide pass across every job board happens on every run and no important role is missed.
+        market_q = [f"{q} {board}" for q in (self.extra_queries + list(queries[:2]))]
+        market_q = list(dict.fromkeys(market_q))[:self.max_queries]
+        gov_q = list(self.site_queries)
+        broad_q = list(dict.fromkeys(market_q + gov_q))
 
         jobs: list[Job] = []
         errors = calls = 0
+        # per-track tallies so the run report can show exactly where jobs came from
+        n_market = n_gov = n_linkedin = 0
 
-        # 1) broad / gov queries - PAST WEEK (LinkedIn/Reed re-index daily, so this kills almost all
-        #    expired/'no longer accepting' postings that SERP snippets can't otherwise detect)
+        def _track(q: str, k: int) -> None:
+            nonlocal n_market, n_gov, n_linkedin
+            if q.startswith("site:uk.linkedin") or q.startswith('site:linkedin'):
+                n_linkedin += k
+            elif q.startswith("site:civilservicejobs") or q.startswith("site:jobs.nhs"):
+                n_gov += k
+            else:
+                n_market += k
+
+        # 1) broad market + gov/LinkedIn queries - PAST MONTH (wider than past-week for coverage; the
+        #    pipeline's expiry gate + _reject/EXPIRED regex still drop stale/'no longer accepting' rows)
         for q in broad_q:
             for page in range(self.pages):
-                data = self._serp(q, start=page * 10, fresh="w")
+                data = self._serp(q, start=page * 10, fresh="m")
                 calls += 1
                 if data is None:
                     errors += 1
@@ -264,6 +275,7 @@ class BrightDataSerpSource(Source):
                 found = self._extract(data, q, "", "")
                 if not found:
                     break
+                _track(q, len(found))
                 jobs.extend(found)
 
         # 2) per-company: search EVERY (non-ATS) company on its OWN careers site. This reliably
@@ -271,6 +283,7 @@ class BrightDataSerpSource(Source):
         #    name-search misses because the name is a common word. Careers domains are BATCHED
         #    (~N per Google query) to keep credits low. Broad LinkedIn (above) covers the market.
         queried = with_roles = 0
+        n_company = n_liname = 0
         with_roles_names: list[str] = []
         cats = ("(data scientist OR data analyst OR AI engineer OR machine learning engineer OR "
                 "analytics engineer OR data analytics OR machine learning OR data science) "
@@ -296,6 +309,7 @@ class BrightDataSerpSource(Source):
             if found:
                 with_roles += 1
                 with_roles_names.append(name)
+                n_company += len(found)
                 jobs.extend(found)
 
         bs = self.company_batch
@@ -315,6 +329,7 @@ class BrightDataSerpSource(Source):
                 got = {j.company for j in found if j.company}
                 with_roles += len(got)
                 with_roles_names.extend(got)
+                n_company += len(found)
                 jobs.extend(found)
 
         # 3) companies with no usable careers domain (gov portals, odd URLs): a LinkedIn name search
@@ -333,6 +348,7 @@ class BrightDataSerpSource(Source):
             if found:
                 with_roles += 1
                 with_roles_names.append(name)
+                n_liname += len(found)
                 jobs.extend(found)
 
         seen, uniq = set(), []
@@ -343,8 +359,12 @@ class BrightDataSerpSource(Source):
             uniq.append(j)
         status = "ok" if (uniq or not errors) else "error"
         meta = {"companies_queried": queried, "companies_with_roles": with_roles,
-                "with_roles_names": with_roles_names[:60]}
-        msg = f"{len(uniq)} jobs · {len(broad_q)} broad + {queried} company queries · {errors} errors"
+                "with_roles_names": with_roles_names[:60],
+                "market_jobs": n_market, "gov_jobs": n_gov,
+                "linkedin_jobs": n_linkedin + n_liname, "company_site_jobs": n_company,
+                "broad_queries": len(broad_q), "company_queries": queried}
+        msg = (f"{len(uniq)} jobs · market {n_market} · linkedin {n_linkedin + n_liname} · "
+               f"gov {n_gov} · company-sites {n_company} · {len(broad_q)} broad + {queried} company q · {errors} err")
         if self._first_error:
             msg += f" · first_error: {self._first_error[:80]}"
         return SourceResult(self.name, jobs=uniq[:limit], status=status, message=msg, meta=meta)

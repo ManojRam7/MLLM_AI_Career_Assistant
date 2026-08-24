@@ -31,8 +31,12 @@ class Pipeline:
         if run_broad and src_cfg.get("reed", {}).get("enabled"):
             out.append(ReedSource(sec.reed_api_key))
         if run_broad and src_cfg.get("adzuna", {}).get("enabled"):
+            _adz = src_cfg.get("adzuna", {})
+            _global = bool(self.s.get("search", {}).get("global_search", False))
+            _countries = (_adz.get("countries") or ["gb"]) if _global else [_adz.get("country", "gb")]
             out.append(AdzunaSource(sec.adzuna_app_id, sec.adzuna_app_key,
-                                    src_cfg.get("adzuna", {}).get("country", "gb")))
+                                    countries=_countries, primary=_adz.get("country", "gb"),
+                                    max_queries_per_country=_adz.get("max_queries_per_country", 5)))
         # ATS scans this sector's companies (free, accurate) - every sector run.
         if src_cfg.get("ats", {}).get("enabled"):
             out.append(ATSSource(bucket_path, self.s.get("seniority", {}).get("include", []), sector=sector))
@@ -93,12 +97,10 @@ class Pipeline:
             # all_companies (daily 4am run) -> per-company search for EVERY company; sector run -> that
             # sector; pure broad -> none. ATS-detectable companies are covered free by ATSSource, so
             # SERP only hits the rest (no double-search, saves credits).
-            if all_companies:
-                _all = companies_in_sector(self.cfg.path(bucket_path), None)
-            elif sector:
-                _all = companies_in_sector(self.cfg.path(bucket_path), sector)
+            if all_companies or not sector:
+                _all = companies_in_sector(self.cfg.path(bucket_path), None)   # full list every full run
             else:
-                _all = []
+                _all = companies_in_sector(self.cfg.path(bucket_path), sector)  # sector run -> that sector
             companies = [(n, u) for (n, u) in _all if not detect_ats(u)]
             # top employers (the alert allowlist) get a dedicated, un-batched search so a top
             # company's roles are never crowded out of a shared batch query.
@@ -108,9 +110,9 @@ class Pipeline:
             priority = {n for (n, u) in companies if is_top_or_gov(n, "", _allow, [])}
             out.append(BrightDataSerpSource(
                 sec.brightdata_api_key, sec.brightdata_serp_zone,
-                sector=sector, run_broad=run_broad,
+                sector=sector, run_broad=True,   # 2.0: broad Google board sweep runs on EVERY run
                 extra_queries=bd.get("extra_queries", []),
-                site_queries=self._gov_site_queries(sector, run_broad, bd),
+                site_queries=self._gov_site_queries(sector, True, bd),
                 search_domains=_domains, companies=companies,
                 max_queries=bd.get("max_queries", 20), pages=bd.get("pages", 1),
                 country=bd.get("country", "gb"), company_batch=bd.get("company_batch", 5),
@@ -164,13 +166,16 @@ class Pipeline:
                                           sen.get("exclude_company", []),
                                           exclude_recruiters=sen.get("exclude_recruiters", True))
         targets = dedupe(targets)
-        # GLOBAL non-UK gate: drop any job whose location/title names a non-UK country or foreign
-        # city, from ANY source (catches leaks like Accenture 'Warsaw' that a source filter missed).
-        from .sources.brightdata_serp import nonuk_country
-        _b4 = len(targets)
-        targets = [j for j in targets
-                   if not nonuk_country(f"{j.location or ''} {j.locations or ''} {j.title or ''}")]
-        _nonuk_dropped = _b4 - len(targets)
+        # non-UK gate — ONLY when global search is OFF. With global_search ON (v2) we KEEP non-UK
+        # roles and instead rank them by geo_score (UK>EU>world + visa sponsorship). When OFF, we drop
+        # any job whose location/title names a non-UK country/foreign city (original UK-only behaviour).
+        global_on = bool(search.get("global_search", False))
+        if not global_on:
+            from .sources.brightdata_serp import nonuk_country
+            _b4 = len(targets)
+            targets = [j for j in targets
+                       if not nonuk_country(f"{j.location or ''} {j.locations or ''} {j.title or ''}")]
+            _nonuk_dropped = _b4 - len(targets)
         # EXPIRY gate: drop jobs whose posted date is older than the max age (keeps look-back to RECENT
         # jobs; a role posted 200 days ago is expired). Unparseable dates are kept.
         import datetime as _dtp
@@ -227,10 +232,9 @@ class Pipeline:
             summary["companies_searched"] = _bd_meta.get("companies_queried", 0)
             summary["companies_with_roles"] = _bd_meta.get("companies_with_roles", 0)
             summary["companies_with_roles_names"] = _bd_meta.get("with_roles_names", [])
-            if all_companies:
-                from .bucketlist import companies_in_sector
-                summary["companies_in_sector"] = len(companies_in_sector(
-                    self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_master.csv")), None))
+            from .bucketlist import companies_in_sector
+            summary["companies_in_sector"] = len(companies_in_sector(
+                self.cfg.path(self.s.get("bucket_list", {}).get("path", "data/companies_master.csv")), None))
 
         # snapshot for offline inspection
         Path("output").mkdir(exist_ok=True)
@@ -259,7 +263,7 @@ class Pipeline:
         legacy = store.purge_sources(self.s.get("cleanup", {}).get("purge_sources", ["Apify"]))
         if legacy:
             summary["purged_legacy"] = legacy
-        despam = store.purge_spam()
+        despam = store.purge_spam(keep_nonuk=global_on)
         if despam:
             summary["purged_spam"] = despam
         expired = store.purge_expired(int(self.s.get("search", {}).get("max_job_age_days", 60)))
@@ -275,6 +279,26 @@ class Pipeline:
             pruned = store.prune_broad_market(bmf)
             if pruned:
                 summary["pruned_broad_market"] = pruned
+
+        # ENRICHMENT (2.0/global): deterministic per-job CV keywords + country + visa-sponsorship
+        # signal + geo priority score (zero LLM cost). Backfills new AND historic rows so the
+        # dashboard/Telegram always show, per job, the keywords to add AND where it is / whether it
+        # sponsors — the UK>EU>world priority is driven by geo_score.
+        from .geo import detect_country, geo_score, visa_signal
+        from .keywords import candidate_skills, extract_keywords
+        _cand = candidate_skills(self.cfg.profile, self.cfg.base_cv)
+        _enrich = store.jobs_needing_enrichment(limit=800)
+        for _j in _enrich:
+            _loc_blob = (f"{_j.get('location') or ''} {_j.get('locations') or ''} "
+                         f"{_j.get('title') or ''} {(_j.get('description') or '')[:600]}")
+            _country = detect_country(_loc_blob, default="")
+            _visa = visa_signal(_j.get("description") or "", _j.get("company") or "")
+            _kw = extract_keywords(_j.get("description") or "", _cand)
+            store.update(_j["dedupe_key"], cv_keywords=_kw.to_line(),
+                         country=(_country or "Unknown"), visa_sponsorship=_visa,
+                         geo_score=geo_score(_country, _visa))
+        if _enrich:
+            summary["enriched"] = len(_enrich)
 
         # fit scoring + tailoring need LLM keys. Capped per run + resilient to
         # free-tier rate limits (a 429 stops the LLM phase cleanly and resumes next run).
@@ -382,53 +406,42 @@ class Pipeline:
 
         digest = store.digest(min_fit=scoring.get("tailor_threshold", 70))
         notify.write_digest(digest)
-        # Telegram: a per-run heartbeat (so you always get a message + can see failures)
-        # plus one rich alert per new high-fit role. Errors are surfaced in the summary.
+
+        # ---- 2.0 RUN REPORT: built once, shown on the WEBSITE (summary_json) + Telegram + a file ----
+        from .report import build_report, report_markdown, report_telegram_summary
+        ncfg = self.s.get("notify", {})
+        max_alerts = ncfg.get("max_per_run", 10)
+        # BEST jobs by importance (top100 > bucket > fit > recency). Prefer fresh; if a run finds
+        # nothing fresh, widen to all-time best so the report and alerts are NEVER empty.
+        best = store.best_jobs(limit=max_alerts, max_age_days=ncfg.get("fresh_days", 3),
+                               min_fit=ncfg.get("min_fit_floor", 0), fresh_only=True)
+        if not best:
+            best = store.best_jobs(limit=max_alerts, min_fit=ncfg.get("min_fit_floor", 0), fresh_only=False)
+        report = build_report(summary, targets, best)
+        summary["report"] = report
+        Path("output/run_report.md").write_text(report_markdown(report), encoding="utf-8")
+
+        # Telegram: send the detailed run report card, then the best jobs (each with CV keywords).
         tg = self.cfg.secrets
         if tg.telegram_bot_token and tg.telegram_chat_id:
-            ncfg = self.s.get("notify", {})
-            max_alerts = ncfg.get("max_per_run", 10)
-            # fetch a larger fresh pool, then keep ONLY top companies + government (no startups)
-            pool = store.jobs_to_notify(ncfg.get("min_fit", 75), limit=max(max_alerts * 8, 40))
-            if ncfg.get("top_gov_only", True):
+            first_name = (self.s.get("candidate", {}).get("name", "there") or "there").split()[0]
+            r_ok, r_detail = notify.send_message(tg.telegram_bot_token, tg.telegram_chat_id,
+                                                 report_telegram_summary(report, first_name))
+            alerts = list(best)
+            # optional narrowing to top employers + gov (default OFF in 2.0: always show best-of).
+            # Never allow the narrowing to drop the list to zero.
+            if ncfg.get("top_gov_only", False):
                 allow = notify.load_notify_allowlist(
                     self.cfg.path(ncfg.get("companies_file", "data/notify_companies.txt")))
-                govs = ncfg.get("gov_sectors", ["Civil Services"])
-                pool = [a for a in pool
-                        if notify.is_top_or_gov(a.get("company", ""), a.get("sector", ""), allow, govs)]
-            alerts = pool[:max_alerts]
-            first_name = (self.s.get("candidate", {}).get("name", "there") or "there").split()[0]
-            hb_ok, hb_detail = True, "off"
-            if ncfg.get("heartbeat", True):
-                src_line = " · ".join(f"{s.get('source', '?').split()[0]} {s.get('count', 0)}"
-                                      for s in summary.get("sources", []))
-                import html as _html
-                _title = (f"✅ <b>{_html.escape(sector)} sector</b> complete" if sector
-                          else "🔔 <b>Job Search Assistant</b> — run complete")
-                hb = (f"{_title}\n"
-                      f"Discovered {summary.get('discovered', 0)} · new {summary.get('stored_new', 0)} · "
-                      f"scored {summary.get('scored', 0)} · tailored {summary.get('tailored', 0)}\n"
-                      + (f"📥 {src_line}\n" if src_line else "")
-                      + f"🧭 DS {summary.get('category_data_science', 0)} · "
-                      + f"AI {summary.get('category_ai_engineer', 0)} · "
-                      + f"DA {summary.get('category_data_analysis', 0)}\n"
-                      + (f"🔎 {summary.get('companies_searched', 0)}/{summary.get('companies_in_sector', '?')} "
-                         f"companies searched · {summary.get('companies_with_roles', 0)} with roles\n"
-                         if sector else
-                         f"🔎 {summary.get('companies_searched', 0)} companies searched\n")
-                      + f"{len(alerts)} new alerts below")
-                # connectivity warnings so you can SEE at a glance if a key isn't wired
-                src_cfg = self.s.get("sources", {})
-                if src_cfg.get("brightdata", {}).get("enabled") and not tg.brightdata_api_key:
-                    hb += "\n⚠️ BRIGHTDATA_API_KEY not set — LinkedIn (Bright Data) is OFF"
-                if summary.get("llm_note"):
-                    hb += f"\n⚠️ {summary['llm_note']}"
-                hb_ok, hb_detail = notify.send_message(tg.telegram_bot_token, tg.telegram_chat_id, hb)
-            sent, aerr = notify.send_job_alerts(alerts, tg.telegram_bot_token, tg.telegram_chat_id, first_name)
+                govs = ncfg.get("gov_sectors", ["Government & Public Sector"])
+                narrowed = [a for a in alerts
+                            if notify.is_top_or_gov(a.get("company", ""), a.get("sector", ""), allow, govs)]
+                alerts = narrowed or alerts
+            sent, aerr = notify.send_best_jobs(alerts, tg.telegram_bot_token, tg.telegram_chat_id, first_name)
             if sent:
-                store.mark_notified([a["dedupe_key"] for a in alerts])
-            summary["telegram"] = (f"heartbeat={'ok' if hb_ok else 'FAIL: ' + hb_detail}; "
-                                   f"alerts_sent={sent}" + (f"; alert_error={aerr}" if aerr else ""))
+                store.mark_notified([a["dedupe_key"] for a in alerts if a.get("dedupe_key")])
+            summary["telegram"] = (f"report={'ok' if r_ok else 'FAIL: ' + r_detail}; "
+                                   f"best_sent={sent}" + (f"; err={aerr}" if aerr else ""))
 
         # persist run history (dashboard reads these) + a local snapshot
         store.log_run(summary)

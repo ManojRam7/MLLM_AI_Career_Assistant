@@ -41,6 +41,8 @@ search:
   max_per_source: 200            # pull deeper from each free API (Reed/Adzuna)
   max_job_age_days: 60           # drop jobs posted more than this many days ago (expired postings)
   require_bucket: false           # strict: keep ONLY jobs from your 750 target companies (max focus)
+  global_search: true            # v2 GLOBAL: keep non-UK roles and RANK by geo_score (UK>EU>world +
+                                 # visa sponsorship) instead of hard-dropping them. false = UK-only.
 
 seniority:
   include:                       # role must match one of these (on the TITLE); covers BOTH categories
@@ -221,16 +223,39 @@ scoring:
   verify_threshold: 70           # two-model consensus: re-check DeepSeek picks >= this with Gemini (0 = off)
 
 notify:
-  min_fit: 75                    # only send a Telegram alert for jobs at/above this fit
-  max_per_run: 10                # cap Telegram messages per run (avoid spam)
-  heartbeat: true                # send a short 'run complete' message each run (set false once confirmed working)
-  top_gov_only: true             # alerts ONLY for top employers (data/notify_companies.txt) + government
+  # 2.0: every run sends a detailed REPORT card + the best jobs by importance (top100 > bucket >
+  # fit > recency), each with the CV keywords to add. Best-of is always surfaced (no hard 75 gate).
+  min_fit_floor: 0               # never suppress a good pick purely on score (0 = off)
+  max_per_run: 12                # best jobs sent to Telegram per run
+  fresh_days: 3                  # prefer jobs first seen in the last N days; auto-widens if none fresh
+  heartbeat: true                # (the report card is always sent)
+  top_gov_only: false            # false = always show the best-of; true = narrow to top employers + gov
   companies_file: "data/notify_companies.txt"   # curated top-employer allowlist (edit freely)
   gov_sectors: ["Government & Public Sector"]   # sectors treated as government (always alert-worthy)
+  min_fit: 75                    # legacy: used by the local digest file + older callers
 
 sources:
   reed: { enabled: true }
-  adzuna: { enabled: true, country: "gb" }
+  adzuna:                        # multi-country when search.global_search is true (UK first, then EU, then world)
+    enabled: true
+    country: "gb"                # PRIMARY country (runs ALL queries; others run the first N core queries)
+    max_queries_per_country: 5   # credit control: non-primary countries only run this many core queries
+    countries:                   # priority order: UK > EU > rest of world (Adzuna country codes)
+      - "gb"                     # United Kingdom (tier 1)
+      - "ie"                     # Ireland (tier 2 / EU)
+      - "de"                     # Germany
+      - "nl"                     # Netherlands
+      - "fr"                     # France
+      - "es"                     # Spain
+      - "it"                     # Italy
+      - "pl"                     # Poland
+      - "ch"                     # Switzerland
+      - "us"                     # United States (tier 3)
+      - "ca"                     # Canada
+      - "au"                     # Australia
+      - "nz"                     # New Zealand
+      - "sg"                     # Singapore
+      - "in"                     # India
   ats: { enabled: true }         # Greenhouse/Lever/Ashby/SmartRecruiters/Workday/Workable/Recruitee/Eightfold
   brightdata:                    # Google job search via Bright Data SERP API (main engine)
     enabled: true
@@ -248,7 +273,7 @@ sources:
     gov_queries: ["data analyst", "data scientist", "data engineer"]
     civil_service_sectors: ["Government & Public Sector"]   # civilservicejobs site: queries on this sector's run
     nhs_sectors: ["Insurance, Health & Pharma"]             # jobs.nhs.uk site: queries on this sector's run
-    linkedin_site: false         # set true to add site:uk.linkedin.com/jobs queries on the broad run
+    linkedin_site: true          # 2.0: dedicated site:uk.linkedin.com/jobs broad queries (LinkedIn depth)
     extra_queries:               # broad market queries (3 categories) - run on the daily full/broad run
       # data science
       - "data scientist United Kingdom"
