@@ -36,15 +36,38 @@ CREATE TABLE IF NOT EXISTS applications (
     salary        TEXT DEFAULT '',
     contact       TEXT DEFAULT '',
     notes         TEXT DEFAULT '',
+    email_link    TEXT DEFAULT '',
+    email_subject TEXT DEFAULT '',
     created_at    TIMESTAMPTZ DEFAULT now(),
     updated_at    TIMESTAMPTZ DEFAULT now()
 );
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS email_link TEXT DEFAULT '';
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS email_subject TEXT DEFAULT '';
 CREATE INDEX IF NOT EXISTS applications_status_idx ON applications(status);
 CREATE INDEX IF NOT EXISTS applications_applied_idx ON applications(applied_date DESC);
 """
 
 _FIELDS = ("company", "role_title", "country", "city", "source_url", "status", "applied_date",
-           "next_action", "next_action_date", "salary", "contact", "notes")
+           "next_action", "next_action_date", "salary", "contact", "notes",
+           "email_link", "email_subject")
+
+
+def ordered_stages(rows: list[dict]) -> list[str]:
+    """The board's stage order: the 6 defaults with any CUSTOM stages found in the data inserted
+    just before 'rejected' (so custom pipeline steps flow naturally, rejected stays last)."""
+    custom = []
+    for r in rows:
+        s = (r.get("status") or "").strip()
+        if s and s not in STATUSES and s not in custom:
+            custom.append(s)
+    if not custom:
+        return list(STATUSES)
+    head = [s for s in STATUSES if s != "rejected"]
+    return head + custom + (["rejected"] if "rejected" in STATUSES else [])
+
+
+def stage_label(s: str) -> str:
+    return STATUS_LABEL.get(s, (s or "").replace("_", " ").title())
 
 
 def day_name(d: Any) -> str:
@@ -153,8 +176,8 @@ class Tracker:
             cur.execute(f"UPDATE applications SET {sets} WHERE id = %s", (*data.values(), app_id))
 
     def set_status(self, app_id: int, status: str) -> None:
-        if status in STATUSES:
-            self.update(app_id, status=status)
+        if status and status.strip():        # accept default OR custom stage names
+            self.update(app_id, status=status.strip())
 
     def delete(self, app_id: int) -> None:
         with self.conn.cursor() as cur:
@@ -163,7 +186,7 @@ class Tracker:
     def list_all(self) -> list[dict[str, Any]]:
         return self._rows(
             "SELECT id,company,role_title,country,city,source_url,status,applied_date,next_action,"
-            "next_action_date,salary,contact,notes,created_at,updated_at "
+            "next_action_date,salary,contact,notes,email_link,email_subject,created_at,updated_at "
             "FROM applications ORDER BY applied_date DESC NULLS LAST, id DESC")
 
     def by_status(self) -> dict[str, list[dict[str, Any]]]:

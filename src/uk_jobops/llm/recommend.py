@@ -146,5 +146,6 @@ def recommend(llm: LLM, base_cv: dict, job: dict, profile: dict | None = None) -
         "'Thank you for considering my application.' then 'Yours sincerely,' then 'Manoj Ram Mopati'. "
         'Truthful to the CV, UK spelling, no em-dashes."}'
     )
-    data = llm.complete_json(SYSTEM, user, provider=llm.tailor_provider, model=llm.tailor_model)
+    data = llm.complete_json(SYSTEM, user, provider=llm.tailor_provider, model=llm.tailor_model,
+                             quality=True)   # deep audit -> quality fallback (GPT-5.6 -> Gemini Pro -> DeepSeek)
     return _to_rec(data)

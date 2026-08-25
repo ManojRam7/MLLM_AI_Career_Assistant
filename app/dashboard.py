@@ -125,6 +125,15 @@ def load_recs(url: str) -> list:
 cfg = load_config()
 url = get_db_url()
 
+# Bridge Streamlit secrets -> env so the Google service-account sync (gsync) works on Streamlit Cloud.
+import os as _os
+for _gk in ("GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_CALENDAR_ID", "GOOGLE_DRIVE_FOLDER_ID"):
+    try:
+        if not _os.environ.get(_gk) and _gk in st.secrets:
+            _os.environ[_gk] = str(st.secrets[_gk])
+    except Exception:
+        pass
+
 st.title("🧭 Job Search Assistant")
 st.caption("Your automated UK data-science job hunt — discovery, fit-scoring, ATS CV tailoring and tracking.")
 
@@ -233,8 +242,11 @@ def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
     if category:
         cols.remove("category")
     cols = [c for c in cols if c in view.columns]
+    # height scales with row count (≈35px/row) capped at 1200 so the table FILLS the screen in
+    # fullscreen instead of stopping halfway; small result sets stay compact.
+    _tbl_h = min(max(len(view), 8) * 35 + 40, 1200)
     st.dataframe(
-        view[cols], hide_index=True, width="stretch", height=620,
+        view[cols], hide_index=True, width="stretch", height=_tbl_h,
         column_config={
             "▲": st.column_config.TextColumn("▲", width="small",
                                              help="Priority: 🟢≥85 🔵75+ 🟡65+ ⚪<65 ▫️unscored"),
@@ -380,8 +392,8 @@ with tab_pipeline:
     st.subheader("Connections")
     flags = {
         "Gemini": bool(sec.gemini_api_key), "OpenAI": bool(sec.openai_api_key),
-        "DeepSeek": bool(sec.deepseek_api_key), "Reed": bool(sec.reed_api_key),
-        "Adzuna": bool(sec.adzuna_app_id and sec.adzuna_app_key),
+        "DeepSeek": bool(sec.deepseek_api_key), "Bright Data": bool(sec.brightdata_api_key),
+        "Reed": bool(sec.reed_api_key), "Adzuna": bool(sec.adzuna_app_id and sec.adzuna_app_key),
         "Supabase": bool(sec.supabase_db_url), "Telegram": bool(sec.telegram_bot_token),
     }
     cols = st.columns(len(flags))
@@ -775,7 +787,8 @@ with tab_bucket:
 with tab_apps:
     import datetime as _dta
 
-    from uk_jobops.tracker import STATUS_LABEL, STATUSES, day_name, rows_to_csv, rows_to_ics
+    from uk_jobops.tracker import (STATUS_LABEL, STATUSES, day_name, ordered_stages, rows_to_csv,
+                                   rows_to_ics, stage_label)
 
     def _rerun():
         try:
@@ -795,14 +808,16 @@ with tab_apps:
 
     trk = get_tracker(url)
     apps = trk.list_all()
+    stages = ordered_stages(apps)          # 6 defaults + any custom stages you've created
 
     # ---- metrics ----
     from uk_jobops.tracker import board_stats
     stt = board_stats(apps)
-    mc = st.columns(7)
-    mc[0].metric("Total", stt["total"])
-    for i, s in enumerate(STATUSES):
-        mc[i + 1].metric(STATUS_LABEL[s], stt.get(s, 0))
+    mc = st.columns(min(8, len(stages) + 1))
+    mc[0].metric("Total", stt.get("total", 0))
+    for i, s in enumerate(stages[:len(mc) - 1]):
+        cnt = sum(1 for a in apps if (a.get("status") or "") == s)
+        mc[i + 1].metric(stage_label(s), cnt)
 
     # ---- add a new application ----
     with st.expander("➕ Add an application", expanded=not apps):
@@ -810,7 +825,8 @@ with tab_apps:
             c1, c2, c3 = st.columns(3)
             company = c1.text_input("Company *")
             role = c2.text_input("Role title *")
-            status = c3.selectbox("Stage", STATUSES, format_func=lambda s: STATUS_LABEL[s])
+            status = c3.selectbox("Stage", stages, format_func=stage_label)
+            custom_stage = c3.text_input("…or new custom stage")
             c4, c5, c6 = st.columns(3)
             country_sel = c4.selectbox("Country", _COUNTRIES, index=0)
             country_other = c5.text_input("…or type country")
@@ -822,18 +838,23 @@ with tab_apps:
             c10, c11 = st.columns(2)
             next_action = c10.text_input("Next action (e.g. 'Coding test')")
             next_date = c11.date_input("Next action date", value=None)
+            c12, c13 = st.columns(2)
+            email_link = c12.text_input("📧 Email link (paste a Gmail link)")
+            email_subject = c13.text_input("Email subject / note")
             notes = st.text_area("Notes", height=70)
             submitted = st.form_submit_button("Add application", type="primary")
             if submitted:
                 if not company.strip() or not role.strip():
                     st.warning("Company and role title are required.")
                 else:
+                    final_stage = (custom_stage.strip().lower().replace(" ", "_")
+                                   or status)   # a typed custom stage wins over the dropdown
                     trk.add(company=company.strip(), role_title=role.strip(),
                             country=(country_other.strip() or country_sel), city=city.strip(),
-                            source_url=url_in.strip(), status=status, applied_date=applied,
+                            source_url=url_in.strip(), status=final_stage, applied_date=applied,
                             salary=salary.strip(), notes=notes.strip(),
-                            next_action=next_action.strip(),
-                            next_action_date=(next_date or None))
+                            next_action=next_action.strip(), next_action_date=(next_date or None),
+                            email_link=email_link.strip(), email_subject=email_subject.strip())
                     st.success(f"Added {role.strip()} at {company.strip()}.")
                     _rerun()
 
@@ -846,17 +867,40 @@ with tab_apps:
     ec3.caption("CSV → save to Google Drive · .ics → import into Google/Apple Calendar "
                 "(interview & next-action dates become all-day events).")
 
+    # ---- live Google sync (app-side service account) ----
+    from uk_jobops import gsync
+    if gsync.configured():
+        g1, g2, g3 = st.columns([1.4, 1.4, 4])
+        if g1.button("📅 Sync dates → Google Calendar", disabled=not apps):
+            try:
+                nsy, msg = gsync.sync_calendar(apps)
+                st.success(f"Synced {nsy} calendar event(s). {msg}")
+            except Exception as exc:
+                st.error(f"Calendar sync failed: {str(exc)[:200]}")
+        if g2.button("💾 Back up → Google Drive", disabled=not apps):
+            try:
+                st.success(f"Drive backup {gsync.backup_to_drive(rows_to_csv(apps))}.")
+            except Exception as exc:
+                st.error(f"Drive backup failed: {str(exc)[:200]}")
+        g3.caption("Live sync via your Google service account (Calendar + Drive). The pipeline also "
+                   "syncs automatically each day.")
+    else:
+        st.caption("🔌 To turn on live Google sync, add a service account "
+                   "(GOOGLE_SERVICE_ACCOUNT_JSON + GOOGLE_CALENDAR_ID + GOOGLE_DRIVE_FOLDER_ID) to secrets. "
+                   "Until then, use the .ics / CSV export above.")
+
     st.divider()
 
-    # ---- kanban board ----
+    # ---- kanban board (dynamic: default + custom stages) ----
+    from urllib.parse import quote as _gq
     if not apps:
         st.info("No applications yet — add your first one above.")
     else:
-        by = {s: [a for a in apps if a.get("status") == s] for s in STATUSES}
-        cols = st.columns(len(STATUSES))
-        for ci, s in enumerate(STATUSES):
+        by = {s: [a for a in apps if (a.get("status") or "") == s] for s in stages}
+        cols = st.columns(len(stages))
+        for ci, s in enumerate(stages):
             with cols[ci]:
-                st.markdown(f"**{STATUS_LABEL[s]}**  ·  {len(by[s])}")
+                st.markdown(f"**{stage_label(s)}**  ·  {len(by[s])}")
                 for a in by[s]:
                     aid = a["id"]
                     with st.container(border=True):
@@ -870,22 +914,69 @@ with tab_apps:
                         if a.get("next_action"):
                             nd = str(a.get("next_action_date") or "")[:10]
                             st.caption(f"⏭ {a['next_action']}" + (f" ({nd})" if nd else ""))
+                        links = []
                         if a.get("source_url"):
-                            st.markdown(f"[open]({a['source_url']})")
+                            links.append(f"[job]({a['source_url']})")
+                        if a.get("email_link"):
+                            links.append(f"[📧 email]({a['email_link']})")
+                        else:
+                            links.append(f"[🔍 find email](https://mail.google.com/mail/u/0/#search/"
+                                         f"{_gq(a.get('company','') or '')})")
+                        if links:
+                            st.markdown(" · ".join(links))
                         # move between stages
-                        i = STATUSES.index(s)
+                        i = stages.index(s)
                         b1, b2, b3 = st.columns(3)
                         if b1.button("◀", key=f"l{aid}", disabled=i == 0, help="Move back"):
-                            trk.set_status(aid, STATUSES[i - 1]); _rerun()
-                        if b2.button("▶", key=f"r{aid}", disabled=i == len(STATUSES) - 1, help="Advance"):
-                            trk.set_status(aid, STATUSES[i + 1]); _rerun()
+                            trk.set_status(aid, stages[i - 1]); _rerun()
+                        if b2.button("▶", key=f"r{aid}", disabled=i == len(stages) - 1, help="Advance"):
+                            trk.set_status(aid, stages[i + 1]); _rerun()
                         with b3.popover("✎") if hasattr(st, "popover") else st.expander("✎ edit"):
+                            mv = st.selectbox("Move to stage", stages, index=i, format_func=stage_label,
+                                              key=f"mv{aid}")
+                            cst = st.text_input("…or new custom stage", key=f"cs{aid}")
                             ne = st.text_input("Next action", a.get("next_action", ""), key=f"na{aid}")
                             nde = st.date_input("Next date", value=None, key=f"nd{aid}")
+                            el = st.text_input("📧 Email link", a.get("email_link", ""), key=f"el{aid}")
                             nt = st.text_area("Notes", a.get("notes", ""), key=f"nt{aid}", height=70)
                             if st.button("Save", key=f"sv{aid}"):
-                                trk.update(aid, next_action=ne, notes=nt,
-                                           next_action_date=(nde or None)); _rerun()
+                                new_stage = cst.strip().lower().replace(" ", "_") or mv
+                                trk.update(aid, status=new_stage, next_action=ne, notes=nt,
+                                           email_link=el.strip(), next_action_date=(nde or None))
+                                _rerun()
                             if st.button("🗑 Delete", key=f"dl{aid}"):
                                 trk.delete(aid); _rerun()
+
+    # ---- CALENDAR DASHBOARD: applications per day ----
+    if apps:
+        st.divider()
+        st.subheader("📆 Applications calendar — how many you applied to each day")
+        import altair as alt
+        dts = [str(a.get("applied_date"))[:10] for a in apps if a.get("applied_date")]
+        s = pd.to_datetime(pd.Series(dts), errors="coerce").dropna()
+        if len(s):
+            daily = s.dt.normalize().value_counts()
+            today = pd.Timestamp.today().normalize()
+            start = min(s.min().normalize(), today - pd.Timedelta(days=120))
+            full = pd.date_range(start, max(s.max().normalize(), today), freq="D")
+            dfc = pd.DataFrame({"date": full})
+            dfc["count"] = dfc["date"].map(lambda d: int(daily.get(d, 0)))
+            dfc["week"] = dfc["date"].dt.strftime("%G-W%V")
+            dfc["dow"] = dfc["date"].dt.strftime("%a")
+            km = st.columns(4)
+            km[0].metric("Applied this week", int(dfc[dfc["date"] >= today - pd.Timedelta(days=today.dayofweek)]["count"].sum()))
+            km[1].metric("Applied this month", int(dfc[dfc["date"].dt.month.eq(today.month) & dfc["date"].dt.year.eq(today.year)]["count"].sum()))
+            km[2].metric("Active days", int((dfc["count"] > 0).sum()))
+            km[3].metric("Best day", int(dfc["count"].max()))
+            heat = (alt.Chart(dfc).mark_rect(cornerRadius=2, stroke="white", strokeWidth=1).encode(
+                x=alt.X("week:O", title=None, axis=alt.Axis(labelAngle=-90, labelFontSize=9)),
+                y=alt.Y("dow:O", title=None, sort=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]),
+                color=alt.Color("count:Q", title="apps",
+                                scale=alt.Scale(scheme="greens", domainMin=0), legend=alt.Legend(orient="right")),
+                tooltip=[alt.Tooltip("date:T", title="date"), alt.Tooltip("count:Q", title="applications")])
+                .properties(height=200))
+            st.altair_chart(heat, use_container_width=True)
+            st.caption("Applications per day (last ~4 months). Darker = more applications that day.")
+            recent = dfc[dfc["date"] >= today - pd.Timedelta(days=60)].set_index("date")["count"]
+            st.bar_chart(recent, height=200)
 

@@ -36,12 +36,18 @@ class LLM:
         self.tailor_model = llm.get("tailor_model") or self.models.get(self.tailor_provider)
         self.verify_provider = llm.get("verify_provider", "openai")
         self.verify_model = llm.get("verify_model") or self.models.get(self.verify_provider)
-        # global fallback order: task providers first, then the rest (Groq no longer in the chain)
+        # global fallback order (bulk): task providers first, then the rest (Groq no longer in chain)
         self.order: list[str] = []
         for p in (self.score_provider, self.tailor_provider, self.verify_provider, primary,
                   self.critic, "gemini", "openai", "deepseek"):
             if p and p not in self.order:
                 self.order.append(p)
+        # QUALITY fallback order: for the deep audit / tailoring, prefer high-reasoning models on
+        # fallback (Gemini Pro before the cheap bulk model) — so GPT-5.6 falls back to Gemini, not DeepSeek.
+        self.quality_order: list[str] = []
+        for p in (self.tailor_provider, "openai", "gemini", "deepseek"):
+            if p and p not in self.quality_order:
+                self.quality_order.append(p)
 
     def available(self, provider: str) -> bool:
         keys = {"gemini": self.s.gemini_api_key, "openai": self.s.openai_api_key,
@@ -49,8 +55,9 @@ class LLM:
         return bool(keys.get(provider))
 
     def complete(self, system: str, user: str, *, provider: str | None = None,
-                 model: str | None = None, temperature: float = 0.2) -> str:
-        chain = ([provider] if provider else []) + [p for p in self.order if p != provider]
+                 model: str | None = None, temperature: float = 0.2, quality: bool = False) -> str:
+        base_order = self.quality_order if quality else self.order
+        chain = ([provider] if provider else []) + [p for p in base_order if p != provider]
         last_err = "no provider available (check API keys)"
         for prov in chain:
             if not prov or not self.available(prov):
@@ -68,9 +75,9 @@ class LLM:
         raise LLMError(last_err)
 
     def complete_json(self, system: str, user: str, *, provider: str | None = None,
-                      model: str | None = None) -> dict[str, Any]:
+                      model: str | None = None, quality: bool = False) -> dict[str, Any]:
         text = self.complete(system + "\nReturn ONLY valid JSON, no prose, no code fences.",
-                             user, provider=provider, model=model)
+                             user, provider=provider, model=model, quality=quality)
         return _extract_json(text)
 
     def _gemini(self, system: str, user: str, temperature: float, model: str | None = None) -> str:

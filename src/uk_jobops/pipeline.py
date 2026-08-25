@@ -132,6 +132,16 @@ class Pipeline:
             q += [f"site:jobs.nhs.uk {c}" for c in cats]
         if run_broad and bd.get("linkedin_site"):
             q += [f"site:uk.linkedin.com/jobs {c} United Kingdom" for c in cats]
+        if run_broad and bd.get("indeed_site"):
+            q += [f"site:uk.indeed.com {c} United Kingdom" for c in cats]   # dedicated Indeed stream
+        # per-country EU / non-EU dedicated LinkedIn + Indeed streams (global reach on the broad run)
+        if run_broad and bd.get("serp_countries"):
+            for cc in bd.get("serp_countries", []):
+                name = cc.get("name", "")
+                if cc.get("linkedin"):
+                    q += [f"site:linkedin.com/jobs {c} {name}" for c in cats]
+                if cc.get("indeed"):
+                    q += [f"site:{cc['indeed']} {c}" for c in cats]
         return q
 
     def discover(self, recency_days: int, sector: str | None = None, run_broad: bool = True,
@@ -365,6 +375,39 @@ class Pipeline:
                             summary["verified"] = summary.get("verified", 0) + len(high)
                         except LLMError as exc:
                             errors.append("verify: " + str(exc)[:120])
+                # LAYERED GUARD (all 3 models) — NEVER MISS AN IMPORTANT JOB. A bucket-list / strong-
+                # signal (MMM/marketing/pricing/RFM…) role scored LOW by DeepSeek is re-checked by
+                # Gemini, then GPT; we keep the HIGHEST score, so one model's miss can't drop it. Only
+                # important-low jobs are escalated, so it stays cheap.
+                rescue_th = scoring.get("rescue_threshold", 65)
+
+                def _important(j) -> bool:
+                    if j.get("in_bucket") or j.get("bucket_tier") == "top100":
+                        return True
+                    blob = f"{j.get('title', '')} {j.get('description', '')}".lower()
+                    return any(k in blob for k in ("marketing mix", " mmm ", "(mmm)", "marketing science",
+                               "trade promotion", "pricing", "revenue growth", "elasticity",
+                               "rfm", "propensity", "marketing scientist"))
+                if scoring.get("guard_important", True) and not llm_exhausted:
+                    low_imp = [(i, job) for i, job in enumerate(chunk)
+                               if results.get(i) and results[i].score < rescue_th and _important(job)]
+                    for _pk, _mk in (("verify_provider", "verify_model"),      # Layer 2: Gemini 2.5 Pro
+                                     ("tailor_provider", "tailor_model")):       # Layer 3: GPT-5.6-terra
+                        pend = [(i, job) for i, job in low_imp if results[i].score < rescue_th]
+                        if not pend:
+                            break
+                        try:
+                            rres = score_fit_batch(llm, self.cfg.base_cv, [j for _, j in pend],
+                                                   self.cfg.profile, provider=lc.get(_pk), model=lc.get(_mk))
+                            for k, (i, _j) in enumerate(pend):
+                                rv = rres.get(k)
+                                if rv and rv.score > results[i].score:   # rescue = keep the HIGHER score
+                                    results[i].score = rv.score
+                                    results[i].reasoning = rv.reasoning or results[i].reasoning
+                        except LLMError as exc:
+                            errors.append("guard: " + str(exc)[:100])
+                    if low_imp:
+                        summary["guard_rescued"] = summary.get("guard_rescued", 0) + len(low_imp)
                 for idx, job in enumerate(chunk):
                     fit = results.get(idx)
                     if fit is None:

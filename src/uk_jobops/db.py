@@ -342,7 +342,7 @@ class Store:
 
     def jobs_needing_score(self, limit: int = 40) -> list[dict[str, Any]]:
         return self._rows(
-            "SELECT dedupe_key,title,company,location,description FROM jobs "
+            "SELECT dedupe_key,title,company,location,description,in_bucket,bucket_tier FROM jobs "
             "WHERE status='new' AND is_target=TRUE AND fit_score=0 "
             "ORDER BY (bucket_tier='top100') DESC, in_bucket DESC LIMIT %s", (limit,))
 

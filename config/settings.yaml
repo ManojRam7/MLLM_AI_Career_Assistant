@@ -223,6 +223,9 @@ scoring:
   score_batch_size: 8            # jobs scored per LLM call (fewer calls + tokens; clears backlog faster)
   max_tailor_per_run: 8          # Gemini via Google AI Pro has expanded limits, so tailor a few more per run
   verify_threshold: 70           # two-model consensus: re-check DeepSeek picks >= this with Gemini (0 = off)
+  guard_important: true          # LAYERED GUARD (all 3 models): never miss an important job
+  rescue_threshold: 65           # a bucket-list / strong-signal role scored below this is re-checked by
+                                 # Gemini, then GPT — keep the HIGHEST, so one model's miss can't drop it
 
 notify:
   # 2.0: every run sends a detailed REPORT card + the best jobs by importance (top100 > bucket >
@@ -275,7 +278,16 @@ sources:
     gov_queries: ["data analyst", "data scientist", "data engineer"]
     civil_service_sectors: ["Government & Public Sector"]   # civilservicejobs site: queries on this sector's run
     nhs_sectors: ["Insurance, Health & Pharma"]             # jobs.nhs.uk site: queries on this sector's run
-    linkedin_site: true          # 2.0: dedicated site:uk.linkedin.com/jobs broad queries (LinkedIn depth)
+    linkedin_site: true          # dedicated site:uk.linkedin.com/jobs stream (UK LinkedIn depth)
+    indeed_site: true            # dedicated site:uk.indeed.com stream (UK Indeed depth)
+    serp_countries:              # per-country dedicated LinkedIn + Indeed SERP streams (EU + non-EU).
+                                 # This is Tier-2 global reach; trim/extend to manage Bright Data credits.
+      - { name: "Ireland",        linkedin: true, indeed: "ie.indeed.com" }
+      - { name: "Germany",        linkedin: true, indeed: "de.indeed.com" }
+      - { name: "Netherlands",    linkedin: true, indeed: "nl.indeed.com" }
+      - { name: "France",         linkedin: true, indeed: "fr.indeed.com" }
+      - { name: "United States",  linkedin: true, indeed: "indeed.com" }
+      - { name: "Canada",         linkedin: true, indeed: "ca.indeed.com" }
     extra_queries:               # broad market queries (3 categories) - run on the daily full/broad run
       # data science
       - "data scientist United Kingdom"
@@ -353,15 +365,20 @@ llm:
   #    differs — the client passes these strings straight through.
   primary: "gemini"              # general fallback provider (Gemini 2.5 Pro)
   critic: ""                     # "" = off
-  # --- bulk fit-scoring: highest volume -> cheapest + fastest ---
+  # THREE premium models, THREE distinct jobs (all actively used every run, none idle):
+  # --- 1) bulk fit-scoring (every job): DeepSeek v4-flash — cheapest + fastest at high volume ---
   score_provider: "deepseek"
   score_model: "deepseek-v4-flash"
-  # --- consensus check on high-fit picks: a DIFFERENT provider than scoring (true second opinion) ---
-  verify_provider: "openai"
-  verify_model: "gpt-5.6-luna"
-  # --- deep ATS keyword audit + cover letter for top picks: highest quality ---
+  # --- 2) consensus verify on high-fit picks: GEMINI 2.5 PRO — a genuine second opinion from a
+  #        different lab; keeps the lower score + ORs ghost flags (conservative). This is what puts
+  #        Gemini to real work instead of leaving it as an idle fallback. ---
+  verify_provider: "gemini"
+  verify_model: "gemini-2.5-pro"
+  # --- 3) deep ATS keyword audit + cover letter for top picks: OpenAI GPT-5.6-terra (best reasoning) ---
   tailor_provider: "openai"
   tailor_model: "gpt-5.6-terra"
+  # escalation model for big score disagreements (optional; used via verify fallback)
+  escalate_model: "deepseek-v4-pro"
   # default per-provider models (used when a task falls back to that provider)
   gemini_model: "gemini-2.5-pro"
   openai_model: "gpt-5.6-luna"

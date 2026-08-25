@@ -63,6 +63,16 @@ jobs:
           ${{ github.event.inputs.wipe == 'true' && '--wipe-all' || '' }}
           ${{ github.event.inputs.reset == 'true' && '--reset-serp' || '' }}
 
+      - name: Sync application tracker to Google (Calendar + Drive)
+        if: always()
+        continue-on-error: true      # never fail the run because of an optional Google sync
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID }}
+          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+        run: python scripts/sync_google.py
+
       - name: Upload tailored CVs + digest
         if: always()
         uses: actions/upload-artifact@v4

@@ -13,6 +13,10 @@ google-genai>=0.3           # Gemini 2.5 Pro (current SDK)
 # OpenAI (GPT-5.6) and DeepSeek (v4) are called over their REST APIs via `requests` — no SDK needed.
 # Groq retired 2026-08.
 
+# Google Calendar + Drive sync for the application tracker (service account)
+google-api-python-client>=2.100
+google-auth>=2.30
+
 # Dashboard (also what Streamlit Community Cloud installs from this file)
 streamlit>=1.36
 pandas>=2.0
