@@ -15,8 +15,10 @@ def test_filter_and_dedupe():
     normalize(jobs)
     targets, rejected = apply_filters(jobs, ["data scientist"], ["senior", "lead", "manager"])
     targets = dedupe(targets)
-    assert len(targets) == 1          # Acme deduped across two rows
-    assert len(rejected) == 2         # Senior + Marketing dropped
+    # v2: senior/lead/principal are IC TARGETS in every category, so 'Senior Data Scientist' is KEPT;
+    # only people-management ('Marketing Manager') is dropped.
+    assert len(targets) == 2          # Acme (deduped) + Senior Data Scientist
+    assert len(rejected) == 1         # Marketing Manager dropped
 
 
 def test_category_classifier():

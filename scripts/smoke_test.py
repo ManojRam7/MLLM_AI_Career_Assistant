@@ -30,7 +30,8 @@ def main() -> None:
     line(bool(s.reed_api_key), "Reed")
     line(bool(s.adzuna_app_id and s.adzuna_app_key), "Adzuna")
     line(bool(s.gemini_api_key), "Gemini")
-    line(bool(s.groq_api_key), "Groq")
+    line(bool(s.openai_api_key), "OpenAI")
+    line(bool(s.deepseek_api_key), "DeepSeek")
     line(bool(s.supabase_db_url), "Supabase")
 
     sample = None
@@ -58,8 +59,8 @@ def main() -> None:
             line(False, src.name, f"ERROR {exc}")
 
     print("\n== 3. LLM fit-score + recommendations (1 job) ==")
-    if not (s.gemini_api_key or s.groq_api_key or s.deepseek_api_key):
-        line(False, "LLM", "no Gemini/Groq/DeepSeek key - skipped")
+    if not (s.gemini_api_key or s.openai_api_key or s.deepseek_api_key):
+        line(False, "LLM", "no Gemini/OpenAI/DeepSeek key - skipped")
     else:
         try:
             from uk_jobops.llm.client import LLM

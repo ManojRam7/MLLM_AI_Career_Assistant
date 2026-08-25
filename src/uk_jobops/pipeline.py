@@ -302,7 +302,8 @@ class Pipeline:
 
         # fit scoring + tailoring need LLM keys. Capped per run + resilient to
         # free-tier rate limits (a 429 stops the LLM phase cleanly and resumes next run).
-        if self.cfg.secrets.gemini_api_key or self.cfg.secrets.groq_api_key:
+        if (self.cfg.secrets.gemini_api_key or self.cfg.secrets.openai_api_key
+                or self.cfg.secrets.deepseek_api_key):
             import time
 
             from .llm.client import LLM, LLMError
@@ -353,7 +354,8 @@ class Pipeline:
                     if high:
                         try:
                             vres = score_fit_batch(llm, self.cfg.base_cv, [j for _, j in high], self.cfg.profile,
-                                                   provider=lc.get("tailor_provider"), model=lc.get("tailor_model"))
+                                                   provider=lc.get("verify_provider", lc.get("tailor_provider")),
+                                                   model=lc.get("verify_model", lc.get("tailor_model")))
                             for k, (i, _job) in enumerate(high):
                                 v = vres.get(k)
                                 if v:

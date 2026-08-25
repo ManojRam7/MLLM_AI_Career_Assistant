@@ -3,9 +3,9 @@
 
   "name": "Manoj Ram Mopati",
 
-  "headline": "Data Scientist with 3+ years' commercial experience across retail, consumer goods, insurance and lending analytics. Differentiator: Marketing Mix Modelling (MMM), trade-promotion optimisation and pricing/revenue analytics. Strong in Python, SQL, PySpark, R, machine learning, Azure (Databricks/Data Factory/Data Lake/Azure ML), Power BI/Tableau, and GenAI/RAG. MSc Data Science (Distinction, Coventry). Microsoft certified (Azure, Power BI, Fabric).",
+  "headline": "Data Scientist with 3+ years' commercial experience across retail, consumer goods, insurance and lending analytics. Differentiator: Marketing Mix Modelling (MMM), trade-promotion optimisation and pricing/revenue analytics. Strong in Python, SQL, PySpark, R, machine learning, Azure (Databricks/Data Factory/Data Lake/Azure ML), Power BI/Tableau, and GenAI/RAG/LLM. MSc Data Science (Distinction, Coventry). Microsoft certified (Azure, Power BI, Fabric).",
 
-  "seniority": "Mid-level individual contributor, 3+ years plus MSc. Level rules: for DATA SCIENCE / AI-ENGINEER / ML-ENGINEER roles, target mid / associate / junior IC level (NOT senior, lead, principal, staff, manager, head-of, director). For DATA ANALYST roles, mid AND senior/lead IC are BOTH wanted (his profile genuinely fits senior/lead Data Analyst). Never people-management, head-of or director roles in any category.",
+  "seniority": "Mid-level individual contributor, 3+ years work experience plus MSc. Level rules: for DATA SCIENCE / AI-ENGINEER / ML-ENGINEER / MARKETING DATA SCIENTIST / ANALYTICS ENGINEER /DATA ANALYST / SENIOR DATA ANALYST roles, target mid / associate / lead / principal / junior / senior level (NOT staff, manager, head-of, director). For DATA ANALYST roles, mid AND senior/lead IC are BOTH wanted (his profile genuinely fits senior/lead Data Analyst). Never people-management, head-of or director roles in any category.",
 
   "target_categories": {
     "data-science": ["Data Scientist", "Associate/Junior/Graduate Data Scientist", "Marketing Data Scientist", "MMM / Marketing Science", "Pricing / Revenue Management Data Scientist", "Customer / Product Data Scientist", "Risk / Fraud Analytics Data Scientist", "Applied Scientist", "Decision Scientist"],
@@ -21,6 +21,7 @@
     "RFM segmentation", "customer / risk segmentation", "forecasting", "time series", "classification", "clustering",
     "tree-based models (XGBoost/Random Forest)", "regression", "feature engineering", "A/B & hypothesis testing",
     "NLP", "GenAI / RAG", "LangChain", "FAISS", "LLM applications",
+    "Applied AI", "Power Apps", "Microsoft Fabric", "Power BI", "Tableau", "Looker Studio", "Excel",
     "Azure Databricks", "Azure Data Factory", "Azure Data Lake", "Azure SQL", "Azure ML", "Azure DevOps", "Azure Container Apps",
     "Microsoft Fabric", "Power BI", "DAX", "Power Query", "Tableau", "Looker Studio", "Excel",
     "ETL / medallion (Bronze-Silver-Gold)", "data modelling", "data quality / validation", "data warehousing concepts",
@@ -31,7 +32,7 @@
     "GCP (BigQuery, Vertex AI, Cloud Storage)", "AWS (S3, SageMaker, Redshift, EC2, Lambda)",
     "note: Azure is the PRIMARY, production-evidenced cloud; GCP and AWS are working/secondary familiarity - credit as breadth, do not present as deep production experience unless a concrete example exists"
   ],
-  "honest_gaps": "Do NOT claim as hands-on without a real example: deep production BigQuery or Looker (has Looker STUDIO, not Looker), dbt, large-scale AWS/GCP production data-warehouse ownership, senior people-leadership, and heavy deep-learning research. These are legitimate JD gaps to name, not skills to invent.",
+  "honest_gaps": "Do NOT claim as hands-on without a concrete example: deep production BigQuery or Looker (has Looker STUDIO, not Looker), dbt, Snowflake, large-scale AWS/GCP production data-warehouse ownership, senior people-leadership, and heavy deep-learning research. Name these as legitimate JD gaps, never invent them.",
 
   "certifications": [
     "Microsoft Certified: Azure Fundamentals (AZ-900)",
@@ -53,16 +54,17 @@
   "country_priority": {"tier1": ["United Kingdom"], "tier2": ["Ireland", "Germany", "Netherlands", "France", "Spain", "Portugal", "Italy", "Belgium", "Luxembourg", "Sweden", "Denmark", "Poland", "Switzerland", "Austria", "Finland", "Norway"], "tier3": ["United States", "Canada", "Australia", "New Zealand", "UAE", "Singapore", "Malaysia", "Russia", "and any other country worldwide"]},
 
   "right_to_work": "On a UK Graduate visa - eligible to work in the UK NOW without employer sponsorship. For ANY non-UK role he requires employer visa sponsorship + relocation (EU Blue Card, Skilled Worker equivalents, etc.).",
-  "sponsorship_rule": "UK roles: do NOT penalise for not advertising sponsorship - he can work now on the Graduate visa (sponsor-capable employers are a mild long-term plus). NON-UK roles: visa sponsorship IS required, so PREFER and rank higher employers that (a) explicitly offer visa sponsorship / relocation, or (b) are LIKELY sponsors (large multinationals, Big Tech, global banks/consultancies, companies with a known international-mobility programme). Do NOT hard-reject a non-UK role that is silent on sponsorship - keep it but rank it below explicit/likely sponsors. A non-UK role that explicitly says 'no sponsorship / must have local work authorization' is a strong negative.",
+  "sponsorship_rule": "UK roles: do NOT penalise for not advertising sponsorship - he can work now on the Graduate visa (sponsor-capable employers are a mild long-term plus). NON-UK roles: visa sponsorship IS required, so PREFER and rank higher employers that (a) explicitly offer visa sponsorship / relocation, or (b) are LIKELY to sponsors (large multinationals, Big Tech, global banks/consultancies, companies with a known international-mobility programme). Do NOT hard-reject a non-UK role that is silent on sponsorship - keep it but rank it below explicit/likely sponsors. A non-UK role that explicitly says 'no sponsorship / must have local work authorization' is a strong negative.",
 
   "salary_min_gbp": 30000,
   "salary_target_gbp": 45000,
-  "work_mode": "hybrid, remote or on-site; open to relocating anywhere in the UK",
+  "salary_max_gbp": 80000,
+  "work_mode": "hybrid, remote or on-site; open to relocating anywhere in the UK, open to relocating anywhere in the world if visa sponsorship is offered (EU Blue Card, Skilled Worker equivalents, etc.)",
 
   "must_haves": [
     "direct employer (not a recruitment / staffing agency reposting on behalf of an unnamed client)",
-    "UK-based or Remote-UK role",
-    "genuine data science, machine learning, AI, analytics-engineering or applied-analytics responsibilities",
+    "a UK role (top priority, no sponsorship needed) OR a non-UK role that offers or is likely to offer visa sponsorship",
+    "genuine data science, machine learning, Gen AI, analytics-engineering or applied-analytics responsibilities",
     "hands-on with SQL/Python and a relevant stack (Azure/PySpark/ML, or SQL/Python/Power BI/Tableau for analyst roles)",
     "level suitable for 3+ years (mid IC for DS/AI; mid or senior/lead for Data Analyst)"
   ],
@@ -72,13 +74,13 @@
     "revenue growth management", "commercial / retail / FMCG analytics", "demand modelling", "forecasting",
     "customer / RFM segmentation", "risk / fraud analytics", "claims analytics",
     "Azure Databricks", "Azure ML", "PySpark", "SQL", "Python", "Power BI", "Tableau",
-    "GenAI / RAG / LLM applications", "MLOps", "CI/CD", "Docker", "production analytics",
+    "GenAI / RAG / LLM applications", "Applied AI", "MLOps", "CI/CD", "Docker", "production analytics",
     "stakeholder-facing analytics / dashboards", "analytics engineering", "data modelling"
   ],
 
   "deal_breakers": [
     "recruitment / staffing agencies unless the end employer is clearly named and suitable",
-    "manager / head-of / director / principal roles requiring people-leadership beyond 3 years (senior/lead is OK ONLY for Data Analyst)",
+    "manager / head-of / director / VP / chief / staff roles, or ANY role requiring people-leadership or line-management (senior, lead and principal ARE wanted as INDIVIDUAL-CONTRIBUTOR roles across all categories, but never people-management)",
     "roles mandating SC / DV / active security clearance he does not hold",
     "pure software-engineering roles with no data / ML / AI / analytics component",
     "Excel-only or manual copy-paste reporting with no SQL/BI",

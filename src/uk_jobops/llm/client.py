@@ -21,26 +21,30 @@ class LLM:
         llm = cfg.settings.get("llm", {})
         self.s = cfg.secrets
         self.critic = llm.get("critic", "")   # optional second-model critique in tailoring
+        # Providers (Groq retired 2026-08): OpenAI (GPT-5.6 tiers) + DeepSeek v4 + Gemini Pro.
         self.models = {
-            "gemini": llm.get("gemini_model", "gemini-2.0-flash"),
-            "groq": llm.get("groq_model", "llama-3.3-70b-versatile"),
-            "deepseek": llm.get("deepseek_model", "deepseek-chat"),
+            "gemini": llm.get("gemini_model", "gemini-2.5-pro"),
+            "deepseek": llm.get("deepseek_model", "deepseek-v4-flash"),
+            "openai": llm.get("openai_model", "gpt-5.6-luna"),
         }
         primary = llm.get("primary", "gemini")
-        # per-task routing (parallel model usage)
-        self.score_provider = llm.get("score_provider", primary)
+        # per-task routing (parallel, cross-provider). score = cheap bulk; verify = a DIFFERENT
+        # provider for genuine two-model consensus; tailor = highest quality for the deep audit.
+        self.score_provider = llm.get("score_provider", "deepseek")
         self.score_model = llm.get("score_model") or self.models.get(self.score_provider)
-        self.tailor_provider = llm.get("tailor_provider", primary)
+        self.tailor_provider = llm.get("tailor_provider", "openai")
         self.tailor_model = llm.get("tailor_model") or self.models.get(self.tailor_provider)
-        # global fallback order: task providers first, then the rest
+        self.verify_provider = llm.get("verify_provider", "openai")
+        self.verify_model = llm.get("verify_model") or self.models.get(self.verify_provider)
+        # global fallback order: task providers first, then the rest (Groq no longer in the chain)
         self.order: list[str] = []
-        for p in (self.score_provider, self.tailor_provider, primary, self.critic,
-                  "gemini", "deepseek", "groq"):
+        for p in (self.score_provider, self.tailor_provider, self.verify_provider, primary,
+                  self.critic, "gemini", "openai", "deepseek"):
             if p and p not in self.order:
                 self.order.append(p)
 
     def available(self, provider: str) -> bool:
-        keys = {"gemini": self.s.gemini_api_key, "groq": self.s.groq_api_key,
+        keys = {"gemini": self.s.gemini_api_key, "openai": self.s.openai_api_key,
                 "deepseek": self.s.deepseek_api_key}
         return bool(keys.get(provider))
 
@@ -55,8 +59,8 @@ class LLM:
             try:
                 if prov == "gemini":
                     return self._gemini(system, user, temperature, m)
-                if prov == "groq":
-                    return self._groq(system, user, temperature, m)
+                if prov == "openai":
+                    return self._openai(system, user, temperature, m)
                 if prov == "deepseek":
                     return self._deepseek(system, user, temperature, m)
             except Exception as exc:  # try next provider
@@ -88,14 +92,27 @@ class LLM:
                                        generation_config={"temperature": temperature})
             return (gm.generate_content(user).text or "").strip()
 
-    def _groq(self, system: str, user: str, temperature: float, model: str | None = None) -> str:
-        from groq import Groq
+    def _openai(self, system: str, user: str, temperature: float, model: str | None = None) -> str:
+        import requests  # OpenAI Chat Completions REST (no SDK dependency)
 
-        client = Groq(api_key=self.s.groq_api_key)
-        resp = client.chat.completions.create(
-            model=model or self.models["groq"], temperature=temperature,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}])
-        return (resp.choices[0].message.content or "").strip()
+        model = model or self.models["openai"]
+        base = {"model": model, "messages": [{"role": "system", "content": system},
+                                             {"role": "user", "content": user}]}
+
+        def _call(payload):
+            return requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {self.s.openai_api_key}",
+                         "Content-Type": "application/json"},
+                json=payload, timeout=120)
+
+        r = _call({**base, "temperature": temperature})
+        # some newer models fix temperature to default / rename token params -> retry minimal payload
+        if r.status_code == 400 and any(k in r.text.lower() for k in ("temperature", "unsupported", "not supported")):
+            r = _call(base)
+        if r.status_code != 200:
+            raise LLMError(f"openai {r.status_code}: {r.text[:200]}")
+        return (r.json()["choices"][0]["message"]["content"] or "").strip()
 
     def _deepseek(self, system: str, user: str, temperature: float, model: str | None = None) -> str:
         import requests  # OpenAI-compatible REST API

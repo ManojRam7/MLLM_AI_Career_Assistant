@@ -35,7 +35,8 @@ class Secrets:
     adzuna_app_key: str = ""
     supabase_db_url: str = ""
     gemini_api_key: str = ""
-    groq_api_key: str = ""
+    openai_api_key: str = ""
+    groq_api_key: str = ""      # retired 2026-08 (kept for back-compat; not used in routing)
     deepseek_api_key: str = ""
     brightdata_api_key: str = ""
     brightdata_serp_zone: str = "serp"
@@ -54,6 +55,10 @@ class Secrets:
             adzuna_app_key=g("ADZUNA_APP_KEY", ""),
             supabase_db_url=g("SUPABASE_DB_URL", ""),
             gemini_api_key=g("GEMINI_API_KEY", ""),
+            # OpenAI key — accept the standard name AND the user's 'openapi_key' spelling, in any
+            # case (os.environ is case-sensitive; local .env uses lowercase 'openapi_key').
+            openai_api_key=(g("OPENAI_API_KEY", "") or g("OPENAPI_KEY", "") or g("OPENAI_KEY", "")
+                            or g("openapi_key", "") or g("openai_api_key", "")),
             groq_api_key=g("GROQ_API_KEY", ""),
             deepseek_api_key=g("DEEPSEEK_API_KEY", ""),
             brightdata_api_key=g("BRIGHTDATA_API_KEY", ""),

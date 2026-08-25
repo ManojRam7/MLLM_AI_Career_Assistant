@@ -370,17 +370,17 @@ with tab_pipeline:
 
     st.subheader("LLM routing (parallel models)")
     a, b, c = st.columns(3)
-    a.metric("Fit-scoring", f"{llm.get('score_provider','gemini')} · {llm.get('score_model','')}")
-    b.metric("CV tailoring", f"{llm.get('tailor_provider','gemini')} · {llm.get('tailor_model','')}")
-    c.metric("Pacing", f"{llm.get('request_delay_seconds', 4)}s / call")
+    a.metric("Fit-scoring", f"{llm.get('score_provider','deepseek')} · {llm.get('score_model','')}")
+    b.metric("Deep audit", f"{llm.get('tailor_provider','openai')} · {llm.get('tailor_model','')}")
+    c.metric("Consensus verify", f"{llm.get('verify_provider','openai')} · {llm.get('verify_model','')}")
     a.metric("Score cap / run", f"{scoring.get('max_score_per_run', 40)} · batch {scoring.get('score_batch_size', 8)}")
     b.metric("Tailor cap / run", scoring.get("max_tailor_per_run", 6))
     c.metric("Tailor threshold", f"fit ≥ {scoring.get('tailor_threshold', 70)}")
 
     st.subheader("Connections")
     flags = {
-        "Gemini": bool(sec.gemini_api_key), "DeepSeek": bool(sec.deepseek_api_key),
-        "Groq": bool(sec.groq_api_key), "Reed": bool(sec.reed_api_key),
+        "Gemini": bool(sec.gemini_api_key), "OpenAI": bool(sec.openai_api_key),
+        "DeepSeek": bool(sec.deepseek_api_key), "Reed": bool(sec.reed_api_key),
         "Adzuna": bool(sec.adzuna_app_id and sec.adzuna_app_key),
         "Supabase": bool(sec.supabase_db_url), "Telegram": bool(sec.telegram_bot_token),
     }

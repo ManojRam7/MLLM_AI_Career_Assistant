@@ -12,7 +12,9 @@ search:
   queries:
     # --- category 1: DATA SCIENCE ---
     - "data scientist"
+    - "senior data scientist"
     - "marketing data scientist"
+    - "marketing scientist"
     - "marketing mix modelling"
     - "marketing science"
     - "associate data scientist"
@@ -29,6 +31,8 @@ search:
     - "AI/ML engineer"
     # --- category 3: DATA ANALYSIS ---
     - "data analyst"
+    - "senior data analyst"
+    - "lead data analyst"
     - "data analytics"
     - "analytics engineer"
     - "business intelligence analyst"
@@ -49,6 +53,7 @@ seniority:
     # data science
     - "data scientist"
     - "marketing data scientist"
+    - "marketing scientist"
     - "marketing mix"
     - "marketing science"
     - "associate data scientist"
@@ -82,11 +87,8 @@ seniority:
     - "reporting analyst"
     - "mi analyst"
     - "data science analyst"
-  exclude_title:                 # drop these (whole-word, IC-level only)
-    - "senior"
-    - "sr"
-    - "lead"
-    - "principal"
+  exclude_title:                 # v2: drop ONLY people-management / over-level. senior / lead /
+                                 # principal are now IC TARGETS and are KEPT (see filtering._SENIOR_OK).
     - "staff"
     - "head of"
     - "director"
@@ -344,17 +346,30 @@ rotation:                        # one sector per scheduled run; all 7 covered o
   broad_on_index: -1             # -1 = no sector run does the broad sweep (only the dedicated full run does)
 
 llm:
-  # Tier reality: DeepSeek = paid credits (cheap, bulk scoring); Gemini = Google AI Pro
-  # plan (expanded AI Studio API limits, quality tailoring); Groq = free fallback.
-  primary: "gemini"              # general fallback provider
-  critic: ""                     # "" = off (saves ~half the calls)
-  # Per-task routing (parallel model usage). Each task falls back through the
-  # others if its provider has no key or errors.
-  score_provider: "deepseek"     # high-volume fit-scoring: cheap paid credits, strong, high limits
-  score_model: "deepseek-chat"
-  tailor_provider: "gemini"      # quality CV tailoring: best instruction-following (AI Pro expanded limits)
-  tailor_model: "gemini-2.5-pro"
-  gemini_model: "gemini-2.0-flash"   # default/fallback Gemini model (higher limits)
-  groq_model: "llama-3.3-70b-versatile"
-  deepseek_model: "deepseek-chat"
-  request_delay_seconds: 2.5     # scoring runs on DeepSeek; Gemini recommendations have AI Pro expanded limits
+  # PROVIDERS (Groq retired 2026-08): OpenAI GPT-5.6 + DeepSeek v4 + Gemini 2.5 Pro, routed PER
+  # WORKLOAD so each task gets the right cost/quality tier and quotas never collide. Each task falls
+  # back through the other providers if its own has no key or errors.
+  # ⚠️ Confirm the exact model-ID strings against each provider's API docs and edit below if a name
+  #    differs — the client passes these strings straight through.
+  primary: "gemini"              # general fallback provider (Gemini 2.5 Pro)
+  critic: ""                     # "" = off
+  # --- bulk fit-scoring: highest volume -> cheapest + fastest ---
+  score_provider: "deepseek"
+  score_model: "deepseek-v4-flash"
+  # --- consensus check on high-fit picks: a DIFFERENT provider than scoring (true second opinion) ---
+  verify_provider: "openai"
+  verify_model: "gpt-5.6-luna"
+  # --- deep ATS keyword audit + cover letter for top picks: highest quality ---
+  tailor_provider: "openai"
+  tailor_model: "gpt-5.6-terra"
+  # default per-provider models (used when a task falls back to that provider)
+  gemini_model: "gemini-2.5-pro"
+  openai_model: "gpt-5.6-luna"
+  deepseek_model: "deepseek-v4-flash"
+  # heavier variants available for harder batches / manual routing
+  deepseek_pro_model: "deepseek-v4-pro"
+  openai_fast_model: "gpt-5.6-sol"     # lightweight OpenAI tier (fast/cheap classification)
+  openai_deep_model: "gpt-5.6-terra"   # heaviest OpenAI tier (deepest reasoning)
+  request_delay_seconds: 2.5
+  # NOTE on the GPT-5.6 tiers: assumed sol = light/fast, luna = balanced, terra = deep/flagship.
+  # If your provider orders them differently, just swap the model strings above.

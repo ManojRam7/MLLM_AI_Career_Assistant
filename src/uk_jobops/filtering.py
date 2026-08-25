@@ -16,7 +16,10 @@ _SPAM = re.compile(
     r"course|academy|re[-\s]?train)\b", re.I)
 
 
-_SENIOR_OK = {"senior", "sr", "lead"}   # allowed for DATA ANALYST roles (candidate targets senior/lead DA)
+# v2: senior / lead / principal are INDIVIDUAL-CONTRIBUTOR targets in EVERY category (the candidate
+# now wants senior/lead/principal DS, AI/ML, analytics and data-analyst IC roles). People-management
+# (manager / head-of / director / VP / chief / staff) is always dropped via exclude_title.
+_SENIOR_OK = {"senior", "sr", "lead", "principal"}
 
 
 def classify(title: str, include: list[str], exclude_title: list[str]) -> tuple[bool, str]:
@@ -25,11 +28,10 @@ def classify(title: str, include: list[str], exclude_title: list[str]) -> tuple[
     # drop course/apprenticeship/placement spam outright
     if _SPAM.search(t):
         return False, "spam"
-    # senior/lead are KEPT for data-analyst roles (a target), but still dropped for DS/AI/ML;
-    # true management (manager/director/head/VP/chief/principal/staff) is always dropped.
-    analyst = bool(_DA_CAT.search(t)) and not _AI_CAT.search(t)
+    # senior/lead/principal are KEPT (IC targets in all categories); true people-management
+    # (manager/director/head/VP/chief/staff) is always dropped.
     for term in exclude_title:
-        if term.lower() in _SENIOR_OK and analyst:
+        if term.lower() in _SENIOR_OK:
             continue
         if _word(term).search(t):
             return False, "excluded-senior"
