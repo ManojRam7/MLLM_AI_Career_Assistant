@@ -213,15 +213,39 @@ def _is_job(url: str, title: str) -> bool:
     return bool(_INDIVIDUAL.search(url) and not _LISTING.search(url) and not _LISTING_TITLE.search(title))
 
 
+def _board_source(host: str) -> str:
+    """Per-job source label by board, so the Jobs / By-Source tabs show WHICH board a Bright Data job
+    came from (LinkedIn / Indeed / Reed / … all via Bright Data) instead of one blanket label."""
+    h = (host or "").lower()
+    if "linkedin." in h:
+        return "LinkedIn (Bright Data)"
+    if "indeed." in h:
+        return "Indeed (Bright Data)"
+    if "reed.co.uk" in h:
+        return "Reed (Bright Data)"
+    if "totaljobs" in h:
+        return "Totaljobs (Bright Data)"
+    if "cv-library" in h:
+        return "CV-Library (Bright Data)"
+    if "civilservicejobs" in h:
+        return "Civil Service (Bright Data)"
+    if "jobs.nhs.uk" in h:
+        return "NHS (Bright Data)"
+    if any(a in h for a in ("greenhouse", "lever.co", "ashbyhq", "myworkdayjobs", "smartrecruiters",
+                            "workable", "recruitee", "eightfold", "personio")):
+        return "Careers site (Bright Data)"
+    return "Bright Data"
+
+
 class BrightDataSerpSource(Source):
     name = "Google/SERP (Bright Data)"   # full Google sweep: LinkedIn + Reed + Totaljobs + CV-Library
 
-    def __init__(self, api_key, zone="serp", *, sector=None, run_broad=True,
+    def __init__(self, api_key, zone="serp_api1", *, sector=None, run_broad=True,
                  extra_queries=None, site_queries=None, search_domains=None,
                  companies=None, max_queries=22, pages=1, country="gb", company_batch=5,
                  priority_companies=None):
         self.api_key = api_key
-        self.zone = zone or "serp"
+        self.zone = zone or "serp_api1"
         self.sector = sector
         self.run_broad = run_broad
         self.extra_queries = list(extra_queries or [])
@@ -383,11 +407,21 @@ class BrightDataSerpSource(Source):
                               json={"zone": self.zone, "url": url, "format": "raw"}, timeout=60)
             if r.status_code in (200, 201):
                 try:
-                    return r.json()
+                    data = r.json()
                 except ValueError:
+                    # got RAW HTML instead of JSON -> brd_json not honored / zone format is 'Raw HTML'.
+                    if not self._first_error:
+                        self._first_error = (f"got HTML not JSON (zone '{self.zone}') — set the SERP "
+                                             f"zone's response format to JSON, or fix BRIGHTDATA_SERP_ZONE. "
+                                             f"body={(r.text or '')[:60]!r}")
                     return {}
+                # JSON but no organic results -> often a Bright Data error body (bad zone/credits/params)
+                if isinstance(data, dict) and not data.get("organic") and not self._first_error:
+                    self._first_error = (f"no 'organic' (zone '{self.zone}') keys={list(data.keys())[:8]} "
+                                         f"body={str(data)[:140]}")
+                return data
             if not self._first_error:
-                self._first_error = f"HTTP {r.status_code}: {r.text[:100]}"
+                self._first_error = f"HTTP {r.status_code} (zone '{self.zone}'): {r.text[:120]}"
             return None
         except requests.RequestException as exc:
             if not self._first_error:
@@ -432,7 +466,7 @@ class BrightDataSerpSource(Source):
             company = self._company_from_url(link) or (hint if on_own else "") or self._company_from(title)
             out.append(Job(title=self._clean_title(title), company=company,
                            location=_uk_location(title, desc), url=link, description=desc,
-                           source=self.name, source_query=query).finalize())
+                           source=_board_source(host), source_query=query).finalize())
         return out
 
     @staticmethod

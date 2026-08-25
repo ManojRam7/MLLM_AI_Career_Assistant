@@ -62,7 +62,7 @@ class Secrets:
             groq_api_key=g("GROQ_API_KEY", ""),
             deepseek_api_key=g("DEEPSEEK_API_KEY", ""),
             brightdata_api_key=g("BRIGHTDATA_API_KEY", ""),
-            brightdata_serp_zone=g("BRIGHTDATA_SERP_ZONE", "serp"),
+            brightdata_serp_zone=g("BRIGHTDATA_SERP_ZONE", "serp_api1"),   # user's zone is 'serp_api1'
             brightdata_linkedin_dataset=g("BRIGHTDATA_LINKEDIN_DATASET", ""),
             brightdata_indeed_dataset=g("BRIGHTDATA_INDEED_DATASET", ""),
             apify_tokens=[t for t in (g("APIFY_TOKEN_1", ""), g("APIFY_TOKEN_2", ""),

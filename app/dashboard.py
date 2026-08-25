@@ -114,7 +114,7 @@ def load_jobs(url: str) -> pd.DataFrame:
 
 @st.cache_data(ttl=60, show_spinner=False)
 def load_runs(url: str) -> pd.DataFrame:
-    return pd.DataFrame(get_store(url).recent_runs(40))
+    return pd.DataFrame(get_store(url).recent_runs(500))   # all past runs for Search Coverage inspection
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -518,6 +518,28 @@ with tab_source:
         st.dataframe(agg, hide_index=True, width="stretch",
                      column_config={"avg_fit": st.column_config.NumberColumn("avg fit", format="%.1f")})
         st.caption("Use the **Source** filter inside the Jobs / Data Science / Data Analysis tabs to drill in.")
+
+        # ---- 📆 per-day-by-source: how many jobs each source picked up on each date ----
+        st.divider()
+        st.markdown("**📆 Jobs picked up per day, by source**")
+        import altair as alt
+        bb = b.copy()
+        bb["day"] = pd.to_datetime(bb.get("fetched"), errors="coerce").dt.strftime("%Y-%m-%d")
+        bb = bb[bb["day"].notna()]
+        if bb.empty:
+            st.caption("No dated jobs yet.")
+        else:
+            per = bb.groupby(["day", "source"]).size().reset_index(name="jobs")
+            chart = (alt.Chart(per).mark_bar().encode(
+                x=alt.X("day:O", title=None, axis=alt.Axis(labelAngle=-45)),
+                y=alt.Y("jobs:Q", title="jobs"),
+                color=alt.Color("source:N", title="source"),
+                tooltip=["day", "source", "jobs"]).properties(height=340))
+            st.altair_chart(chart, use_container_width=True)
+            piv = (per.pivot(index="day", columns="source", values="jobs")
+                   .fillna(0).astype(int).sort_index(ascending=False))
+            st.caption("Date × source (newest first):")
+            st.dataframe(piv, width="stretch")
 
 # --------------------------------------------------------------- TRACKER (KANBAN)
 with tab_board:
