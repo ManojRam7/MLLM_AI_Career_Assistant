@@ -19,18 +19,24 @@ class ReedSource(Source):
         if not self.api_key:
             return SourceResult(self.name, status="skipped", message="REED_API_KEY not set")
         jobs: list[Job] = []
-        per_query = max(10, limit // max(1, len(queries)))
+        # deeper per-query pull (Reed returned too few before). Reed overlaps Adzuna, so many collapse
+        # in dedup — pulling more surfaces the roles Adzuna misses. Direct employers only (no agencies).
+        per_query = min(100, max(30, limit // max(1, len(queries))))
+        seen: set[str] = set()
         try:
             for q in queries:
                 params = {
                     "keywords": q,
                     "locationName": "United Kingdom",
-                    "resultsToTake": min(100, per_query),
+                    "resultsToTake": per_query,
                     "postedByDirectEmployer": "true",   # direct employers, not recruiters
                 }
                 r = requests.get(BASE, params=params, auth=(self.api_key, ""), timeout=30)
                 r.raise_for_status()
                 for it in r.json().get("results", []):
+                    if it.get("jobUrl", "") in seen:    # de-dupe within Reed across queries
+                        continue
+                    seen.add(it.get("jobUrl", ""))
                     jobs.append(Job(
                         title=it.get("jobTitle", ""),
                         company=it.get("employerName", ""),

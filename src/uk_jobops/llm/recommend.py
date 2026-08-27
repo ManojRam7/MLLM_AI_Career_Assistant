@@ -55,6 +55,16 @@ class Recommendation:
 
     def to_markdown(self) -> str:
         p: list[str] = []
+        # ATS KEYWORDS FIRST — the single most important, actionable output for this role.
+        if self.keywords_use or self.keywords_with_example or self.keywords_never:
+            kb = ["### 🎯 ATS keywords to add for this role"]
+            if self.keywords_use:
+                kb.append("**Use prominently (you already evidence these):** " + ", ".join(self.keywords_use))
+            if self.keywords_with_example:
+                kb.append("**Use only with a concrete example:** " + ", ".join(self.keywords_with_example))
+            if self.keywords_never:
+                kb.append("**Do NOT claim (no real evidence):** " + ", ".join(self.keywords_never))
+            p.append("\n\n".join(kb))
         if self.strict_score or self.potential_score:
             head = f"**Strict match {self.strict_score}/100**"
             if self.potential_score:
@@ -77,13 +87,6 @@ class Recommendation:
                 m = str(r.get("match", "")).replace("|", "/")
                 rows.append(f"| {req} | {ev} | {m} |")
             p.append("**Requirement-by-requirement match**\n\n" + "\n".join(rows))
-
-        if self.keywords_use:
-            p.append("**Keywords - use prominently (evidenced)**\n\n" + ", ".join(self.keywords_use))
-        if self.keywords_with_example:
-            p.append("**Keywords - use ONLY with a real example**\n\n" + ", ".join(self.keywords_with_example))
-        if self.keywords_never:
-            p.append("**Do NOT claim without real experience**\n\n" + ", ".join(self.keywords_never))
 
         for key, label in (("positioning", "CV positioning / target heading"), ("summary", "Profile / summary"),
                            ("skills", "Skills"), ("experience", "Experience bullets"),

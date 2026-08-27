@@ -68,7 +68,7 @@ def score_fit(llm: LLM, base_cv: dict, job: dict, profile: dict | None = None) -
     user = (
         _candidate(base_cv, profile) +
         f"JOB:\nTitle: {job.get('title')}\nCompany: {job.get('company')}\n"
-        f"Location: {job.get('location')}\nDescription:\n{(job.get('description') or '')[:2000]}\n\n"
+        f"Location: {job.get('location')}\nDescription:\n{(job.get('description') or '')[:2800]}\n\n"
         'Return JSON: {"score": int, "band": "High|Medium|Low", "reasoning": "strict verdict + named gaps + ~potential after honest tailoring", '
         '"ghost_flag": bool, "gaps": ["..."]}'
     )
@@ -86,7 +86,7 @@ def score_fit_batch(llm: LLM, base_cv: dict, jobs: list[dict], profile: dict | N
     blocks = []
     for i, job in enumerate(jobs):
         blocks.append(f"[{i}] Title: {job.get('title')} | Company: {job.get('company')} | "
-                      f"Location: {job.get('location')}\n{(job.get('description') or '')[:1200]}")
+                      f"Location: {job.get('location')}\n{(job.get('description') or '')[:1900]}")
     user = (
         _candidate(base_cv, profile) +
         "JOBS - score each independently against the candidate:\n\n" + "\n\n".join(blocks) +

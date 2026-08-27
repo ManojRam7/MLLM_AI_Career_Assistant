@@ -390,7 +390,7 @@ class BrightDataSerpSource(Source):
         msg = (f"{len(uniq)} jobs · market {n_market} · linkedin {n_linkedin + n_liname} · "
                f"gov {n_gov} · company-sites {n_company} · {len(broad_q)} broad + {queried} company q · {errors} err")
         if self._first_error:
-            msg += f" · first_error: {self._first_error[:80]}"
+            msg += f" · first_error: {self._first_error[:220]}"
         return SourceResult(self.name, jobs=uniq[:limit], status=status, message=msg, meta=meta)
 
     def _serp(self, query: str, start: int = 0, fresh: str = ""):

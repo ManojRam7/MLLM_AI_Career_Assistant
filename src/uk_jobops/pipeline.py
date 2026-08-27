@@ -375,39 +375,45 @@ class Pipeline:
                             summary["verified"] = summary.get("verified", 0) + len(high)
                         except LLMError as exc:
                             errors.append("verify: " + str(exc)[:120])
-                # LAYERED GUARD (all 3 models) — NEVER MISS AN IMPORTANT JOB. A bucket-list / strong-
-                # signal (MMM/marketing/pricing/RFM…) role scored LOW by DeepSeek is re-checked by
-                # Gemini, then GPT; we keep the HIGHEST score, so one model's miss can't drop it. Only
-                # important-low jobs are escalated, so it stays cheap.
-                rescue_th = scoring.get("rescue_threshold", 65)
-
-                def _important(j) -> bool:
-                    if j.get("in_bucket") or j.get("bucket_tier") == "top100":
-                        return True
-                    blob = f"{j.get('title', '')} {j.get('description', '')}".lower()
-                    return any(k in blob for k in ("marketing mix", " mmm ", "(mmm)", "marketing science",
-                               "trade promotion", "pricing", "revenue growth", "elasticity",
-                               "rfm", "propensity", "marketing scientist"))
+                # LAYERED FIT-SCORE (3 models) — the anti-false-negative net. DeepSeek (fast) scores
+                # every job; then Gemini 2.5 Pro re-checks EVERY job scored < l2, and GPT-5.6-terra
+                # re-checks those still < l3. We KEEP THE HIGHER score, so a genuinely strong match can
+                # never stay trapped at a low fit because one model misjudged it (e.g. a good AI-Engineer
+                # role wrongly scored 15). Important (bucket-list) jobs escalate first; only low scores
+                # escalate, so cost stays bounded.
                 if scoring.get("guard_important", True) and not llm_exhausted:
-                    low_imp = [(i, job) for i, job in enumerate(chunk)
-                               if results.get(i) and results[i].score < rescue_th and _important(job)]
-                    for _pk, _mk in (("verify_provider", "verify_model"),      # Layer 2: Gemini 2.5 Pro
-                                     ("tailor_provider", "tailor_model")):       # Layer 3: GPT-5.6-terra
-                        pend = [(i, job) for i, job in low_imp if results[i].score < rescue_th]
-                        if not pend:
-                            break
+                    l2 = int(scoring.get("rescue_l2_threshold", 60))
+                    l3 = int(scoring.get("rescue_l3_threshold", 35))
+                    cap = int(scoring.get("max_rescue_per_run", 200))
+
+                    def _imp(j) -> bool:
+                        return bool(j.get("in_bucket") or j.get("bucket_tier") == "top100")
+
+                    def _relayer(threshold: int, prov_key: str, model_key: str, tag: str) -> int:
+                        low = [(i, job) for i, job in enumerate(chunk)
+                               if results.get(i) and results[i].score < threshold]
+                        low.sort(key=lambda t: (not _imp(t[1]),))     # important jobs first
+                        low = low[:cap]
+                        if not low:
+                            return 0
                         try:
-                            rres = score_fit_batch(llm, self.cfg.base_cv, [j for _, j in pend],
-                                                   self.cfg.profile, provider=lc.get(_pk), model=lc.get(_mk))
-                            for k, (i, _j) in enumerate(pend):
-                                rv = rres.get(k)
-                                if rv and rv.score > results[i].score:   # rescue = keep the HIGHER score
-                                    results[i].score = rv.score
-                                    results[i].reasoning = rv.reasoning or results[i].reasoning
+                            rr = score_fit_batch(llm, self.cfg.base_cv, [j for _, j in low], self.cfg.profile,
+                                                 provider=lc.get(prov_key), model=lc.get(model_key))
                         except LLMError as exc:
-                            errors.append("guard: " + str(exc)[:100])
-                    if low_imp:
-                        summary["guard_rescued"] = summary.get("guard_rescued", 0) + len(low_imp)
+                            errors.append(f"{tag}: {str(exc)[:80]}")
+                            return 0
+                        for k, (i, _j) in enumerate(low):
+                            rv = rr.get(k)
+                            if rv and rv.score > results[i].score:    # rescue = keep the HIGHER score
+                                results[i].score = rv.score
+                                results[i].reasoning = rv.reasoning or results[i].reasoning
+                                results[i].ghost_flag = results[i].ghost_flag and rv.ghost_flag
+                        return len(low)
+
+                    n2 = _relayer(l2, "verify_provider", "verify_model", "fit-L2-Gemini")   # < 60 -> Gemini
+                    _relayer(l3, "tailor_provider", "tailor_model", "fit-L3-GPT")           # still < 35 -> GPT
+                    if n2:
+                        summary["guard_rescued"] = summary.get("guard_rescued", 0) + n2
                 for idx, job in enumerate(chunk):
                     fit = results.get(idx)
                     if fit is None:

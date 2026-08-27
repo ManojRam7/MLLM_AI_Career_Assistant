@@ -42,7 +42,7 @@ search:
               "Glasgow", "Leeds", "Bristol", "Remote UK"]
   recency_days_recurring: 7      # rolling week window so nothing recent is missed between runs
   recency_days_first: 21         # first run backfills 3 weeks
-  max_per_source: 200            # pull deeper from each free API (Reed/Adzuna)
+  max_per_source: 300            # pull deeper from each free API (Reed/Adzuna) so Reed contributes more
   max_job_age_days: 60           # drop jobs posted more than this many days ago (expired postings)
   require_bucket: false           # strict: keep ONLY jobs from your 750 target companies (max focus)
   global_search: true            # v2 GLOBAL: keep non-UK roles and RANK by geo_score (UK>EU>world +
@@ -214,18 +214,20 @@ seniority:
     - "Harnham"
 
 scoring:
-  tailor_threshold: 70           # only tailor a CV when fit score >= this (saves tokens)
+  tailor_threshold: 25           # generate the deep ATS recommendation for fit >= 25 (covers 25-100)
   shortlist_threshold: 60
   max_score_per_run: 300         # DeepSeek cheap+batched; the daily all-list run finds more, so clear backlog fast
   broad_market_min_fit: 0        # 0 = KEEP everything (accumulate / look-back); jobs never auto-deleted.
                                  # Surface top companies with the '⭐ top list' toggle instead of deleting.
                                  # Set e.g. 60 to auto-remove non-bucket jobs scored below that.
   score_batch_size: 8            # jobs scored per LLM call (fewer calls + tokens; clears backlog faster)
-  max_tailor_per_run: 8          # Gemini via Google AI Pro has expanded limits, so tailor a few more per run
+  max_tailor_per_run: 15         # deep ATS recommendations generated per run (premium models)
   verify_threshold: 70           # two-model consensus: re-check DeepSeek picks >= this with Gemini (0 = off)
-  guard_important: true          # LAYERED GUARD (all 3 models): never miss an important job
-  rescue_threshold: 65           # a bucket-list / strong-signal role scored below this is re-checked by
-                                 # Gemini, then GPT — keep the HIGHEST, so one model's miss can't drop it
+  # LAYERED FIT-SCORE (3 models) — the anti-false-negative net (never trap a good job at a low fit):
+  guard_important: true          # master on/off for the layered re-check
+  rescue_l2_threshold: 60        # Gemini 2.5 Pro re-checks EVERY job DeepSeek scored below this
+  rescue_l3_threshold: 35        # GPT-5.6-terra re-checks any still below this; keep the HIGHER score
+  max_rescue_per_run: 200        # cap on jobs escalated per chunk (important/bucket jobs first)
 
 notify:
   # 2.0: every run sends a detailed REPORT card + the best jobs by importance (top100 > bucket >

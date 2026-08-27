@@ -360,9 +360,9 @@ with tab_overview:
 
         st.subheader("Top matches")
         top_cols = ["new", "title", "company", "sector", "locations", "fit", "in_bucket", "status", "posted", "fetched", "url"]
-        top = ov[ov["fit_score"] >= 70].head(15)
+        top = ov[ov["fit_score"] >= 65].sort_values("fit_score", ascending=False).head(40)
         top = top[[c for c in top_cols if c in top.columns]]
-        st.dataframe(top, hide_index=True, width="stretch",
+        st.dataframe(top, hide_index=True, width="stretch", height=min(max(len(top), 8) * 35 + 40, 1000),
                      column_config={"url": st.column_config.LinkColumn("link", display_text="open"),
                                     "in_bucket": st.column_config.CheckboxColumn("⭐"),
                                     "new": st.column_config.CheckboxColumn("🆕"),
@@ -456,12 +456,12 @@ with tab_pipeline:
                                          for s in sj.get("sources", [])),
                 "note": r.get("llm_note") or (sj.get("telegram", "") or ""),
             })
-        st.dataframe(pd.DataFrame(disp), hide_index=True, width="stretch", height=430)
-        # sector coverage — pick ANY sector run (any day) to see its full coverage
-        _sector_runs = [(_local(r.get("run_at")), _sj(r)) for _, r in runs.iterrows()
-                        if _sj(r).get("companies_in_sector")]
+        st.dataframe(pd.DataFrame(disp), hide_index=True, width="stretch",
+                     height=min(max(len(disp), 8) * 35 + 40, 1100))
+        # coverage — pick ANY run (full OR sector, any day, including one-off sector runs like 'Banking')
+        _sector_runs = [(_local(r.get("run_at")), _sj(r)) for _, r in runs.iterrows()]
         if _sector_runs:
-            st.markdown("**🔎 Sector coverage** — every-company search results, per run")
+            st.markdown("**🔎 Run coverage** — every run (full or single-sector), search results per run")
             _labels = [f"{t}  ·  {sj.get('sector', '?')}  ({sj.get('companies_searched', 0)}"
                        f"/{sj.get('companies_in_sector', '?')} searched)" for t, sj in _sector_runs]
             _pick = st.selectbox("Pick a run", _labels, key="cov_pick", label_visibility="collapsed")
@@ -515,9 +515,23 @@ with tab_source:
                    AI=("category", lambda s: int((s == "ai-engineer").sum())),
                    DA=("category", lambda s: int((s == "data-analysis").sum())))
                .reset_index().sort_values("jobs", ascending=False))
+        # combined 'Bright Data (all)' pillar = every board fetched via Bright Data SERP together
+        _bd = b[b["source"].astype(str).str.contains("Bright Data", na=False)]
+        if not _bd.empty:
+            _bdrow = {"source": "🛰 Bright Data (all)", "jobs": len(_bd),
+                      "avg_fit": round(_bd.loc[_bd["fit_score"] > 0, "fit_score"].mean(), 1)
+                      if (_bd["fit_score"] > 0).any() else 0.0,
+                      "bucket": int(_bd["in_bucket"].sum()),
+                      "DS": int((_bd["category"] == "data-science").sum()),
+                      "AI": int((_bd["category"] == "ai-engineer").sum()),
+                      "DA": int((_bd["category"] == "data-analysis").sum())}
+            agg = pd.concat([pd.DataFrame([_bdrow]), agg], ignore_index=True)
         st.dataframe(agg, hide_index=True, width="stretch",
+                     height=min(max(len(agg), 4) * 35 + 40, 700),
                      column_config={"avg_fit": st.column_config.NumberColumn("avg fit", format="%.1f")})
-        st.caption("Use the **Source** filter inside the Jobs / Data Science / Data Analysis tabs to drill in.")
+        st.caption("'🛰 Bright Data (all)' is every board (LinkedIn + Indeed + Reed + Totaljobs + … via "
+                   "Bright Data SERP) combined; the rows below it break it down per board. Use the **Source** "
+                   "filter in the Jobs tabs to drill in.")
 
         # ---- 📆 per-day-by-source: how many jobs each source picked up on each date ----
         st.divider()
@@ -665,6 +679,23 @@ with tab_coverage:
         st.info("No runs logged yet.")
     else:
         allruns = [(_loc(r.get("run_at")), _sjc(r)) for _, r in runs.iterrows()]
+        # ⚠️ PROMINENT SERP HEALTH BANNER — the #1 thing to watch. Shows the latest run's Google/SERP
+        # note (which carries the exact first_error diagnostic) so a broken SERP is impossible to miss.
+        _latest = allruns[0][1] if allruns else {}
+        _serp = next((x for x in _latest.get("sources", []) if "Bright Data" in x.get("source", "")), None)
+        if _serp:
+            _smsg = _serp.get("message", "") or ""
+            if _serp.get("status") == "error" or int(_serp.get("count", 0) or 0) == 0:
+                st.error(f"🔴 **Google/SERP (Bright Data): {_serp.get('status')} — 0 jobs.**  {_smsg}")
+                st.caption("Fix guide → **HTTP 401/403 / auth** = the BRIGHTDATA_API_KEY GitHub secret "
+                           "doesn't match your Bright Data account (copy the key from Bright Data → "
+                           "Settings → Users and API keys → Show). **'zone' / 404** = set "
+                           "BRIGHTDATA_SERP_ZONE=serp_api1. **'got HTML not JSON'** = set the zone's "
+                           "response format to Full JSON. Then re-run.")
+            else:
+                st.success(f"🟢 Google/SERP (Bright Data): {_smsg}")
+            st.divider()
+
         # 2.0 RUN REPORT — the detailed per-run message (same content as Telegram), front and centre.
         latest_report = next((s.get("report") for _, s in allruns if s.get("report")), None)
         if latest_report:
@@ -705,7 +736,7 @@ with tab_coverage:
                 stt = str(x.get("status", ""))
                 dot = "🟢" if stt == "ok" else ("🔴" if stt == "error" else "⚪")
                 srows.append({" ": dot, "source": x.get("source", "?"), "status": stt,
-                              "jobs": x.get("count", 0), "detail": (x.get("message") or "")[:160]})
+                              "jobs": x.get("count", 0), "detail": (x.get("message") or "")[:300]})
             st.dataframe(pd.DataFrame(srows), hide_index=True, width="stretch")
             st.caption("'Google/SERP (Bright Data)' is the main engine (LinkedIn + Reed + Totaljobs + "
                        "CV-Library + Indeed via Google). The structured 'LinkedIn Jobs'/'Indeed' scrapers "
@@ -801,7 +832,7 @@ with tab_bucket:
         st.caption(f"{len(view)} companies")
         st.dataframe(
             view[cols].rename(columns={"has_jobs": " ", "company_name": "company"}),
-            hide_index=True, width="stretch", height=560,
+            hide_index=True, width="stretch", height=min(max(len(view), 8) * 35 + 40, 1200),
             column_config={"careers_url": st.column_config.LinkColumn("careers", display_text="open")})
 
 
