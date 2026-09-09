@@ -86,6 +86,7 @@ def build_report(summary: dict, targets: list, best: list[dict]) -> dict:
             "da": summary.get("category_data_analysis", 0),
             "bucket_matches": summary.get("bucket_matches", 0),
             "top100_matches": summary.get("top100_matches", 0),
+            "apply_ready": summary.get("apply_ready", 0),
         },
         "bucket": bucket, "sources": sources, "google_tracks": google_tracks,
         "best": best_rows,
@@ -167,6 +168,9 @@ def report_telegram_summary(r: dict, name: str = "there") -> str:
                      f"gov {g.get('gov',0)} · career-sites {g.get('company_sites',0)}")
     if r.get("llm_note"):
         lines.append(f"⚠️ {_e(r['llm_note'])}")
+    if t.get("apply_ready"):
+        lines.append(f"🚀 <b>{t['apply_ready']} role(s) ready to apply</b> (direct ATS ≥ threshold) — "
+                     f"run auto_apply.py")
     lines.append("")
     lines.append(f"⬇️ Top {len(r['best'])} picks below, {_e(name)}")
     return "\n".join(lines)

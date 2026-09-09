@@ -122,6 +122,27 @@ def send_message(token: str, chat_id: str, text: str) -> tuple[bool, str]:
         return False, str(exc)[:160]
 
 
+def send_photo(token: str, chat_id: str, image_path: str, caption: str = "") -> tuple[bool, str]:
+    """Send a photo (e.g. an application confirmation screenshot) to Telegram."""
+    if not (token and chat_id and image_path):
+        return False, "no token/chat_id/image"
+    import requests
+
+    try:
+        with open(image_path, "rb") as fh:
+            r = requests.post(f"https://api.telegram.org/bot{token}/sendPhoto",
+                              data={"chat_id": chat_id, "caption": caption[:1000], "parse_mode": "HTML"},
+                              files={"photo": fh}, timeout=40)
+        if r.status_code == 200:
+            return True, "ok"
+        try:
+            return False, f"{r.status_code} {r.json().get('description', r.text[:160])}"
+        except Exception:
+            return False, f"{r.status_code} {r.text[:160]}"
+    except Exception as exc:
+        return False, str(exc)[:160]
+
+
 def send_job_alerts(rows: list[dict], token: str, chat_id: str, name: str = "there") -> tuple[int, str]:
     """Send one rich message per job. Returns (count_sent, first_error)."""
     if not (token and chat_id and rows):

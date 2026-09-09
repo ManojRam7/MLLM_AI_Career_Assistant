@@ -1,0 +1,204 @@
+# ============================================================================
+# APPLICANT BRAIN — the complete "answer like me" knowledge base for the apply agent.
+# The AI form-filler (scripts/auto_apply.py) reads this + the exact CV being attached, and answers
+# ANY application question as Manoj. Edit anything here; it takes effect on the next run.
+# Keep it TRUTHFUL — the agent must never claim beyond what's here / on the CV.
+# ============================================================================
+
+identity:
+  full_name: "Manoj Ram Mopati"
+  first_name: "Manoj Ram"
+  last_name: "Mopati"
+  email: "manojrammopati111@gmail.com"
+  phone: "07810294727"
+  location: "London, UK"
+  linkedin: "linkedin.com/in/manojrammopati"
+  github: "github.com/ManojRam7"
+  portfolio: "manojram7.github.io/RamMopatisPortfolio"
+  pronouns: "He/Him"
+  title: "Mr"
+
+work_authorization:
+  right_to_work_uk: "Yes — I hold a UK Graduate visa and can work in the UK now without sponsorship."
+  needs_sponsorship_uk_now: "No"
+  needs_sponsorship_future: "My Graduate visa is temporary (valid to 4 Aug 2028); I may need sponsorship after that."
+  visa_type: "UK Graduate visa (Post Study Work / PSW)"
+  visa_granted: "04 August 2026"
+  visa_expiry: "04 August 2028"
+  # On multi-choice right-to-work questions choose the option meaning: a visa giving TEMPORARY right
+  # to work in the UK that may need sponsorship in the future — NOT permanent/settled/national.
+  right_to_work_status_choice: "I have a visa that gives me temporary right to work in the UK, and might need sponsorship in the future"
+  arrived_in_uk: "14 May 2025 (entered the UK to study my MSc)"
+  non_uk_roles: "For roles outside the UK I would require visa sponsorship + relocation."
+  security_clearance: "None currently; happy to undergo standard background/reference checks."
+
+preferences:
+  salary_min_gbp: 30000
+  salary_target_gbp: 45000
+  salary_max_gbp: 80000
+  salary_answer: "Around £45,000, flexible depending on the full package and the role."
+  notice_period: "1 month"
+  earliest_start: "Within about 1 month of an offer"
+  work_mode: "Open to hybrid, remote or on-site."
+  willing_to_relocate: "Yes — anywhere in the UK; internationally if visa sponsorship is provided."
+  locations_ok: ["London", "anywhere in the UK", "Remote UK", "Hybrid UK"]
+
+diversity:  # asked for reporting only; Manoj is happy to answer these
+  gender: "Male"            # forms may label this "Man" — treat Male/Man as the same
+  ethnicity: "Indian"       # specifically Asian or Asian British - Indian (NOT "Asian - Other")
+  ethnicity_detail: "Asian or Asian British - Indian"
+  age_bracket: "25-29"
+  disability: "No"
+  sexual_orientation: "Heterosexual (straight)"
+  veteran_status: "No / N/A"
+
+personal:
+  date_of_birth: "07/02/1999"     # 7 February 1999 (DD/MM/YYYY) — per passport (age ~27)
+  nationality: "Indian"
+  country_of_birth: "India"
+  home_country: "India"           # country of origin (where I'm from / born)
+  current_country: "United Kingdom"  # where I live and work NOW (on the Graduate visa)
+  city_location: "London, United Kingdom"   # for 'current location' autocomplete fields
+
+address:                          # current UK home address (for address / postcode fields)
+  line1: "Flat 14, Johnson House Apartments"
+  line2: "Florida Street"
+  city: "London"
+  county: "Greater London"
+  postcode: "E2 6AN"
+  country: "United Kingdom"
+  full: "Flat 14, Johnson House Apartments, Florida Street, London, E2 6AN, United Kingdom"
+
+background:   # UK socio-economic / diversity-of-background questions
+  parents_higher_education: "Yes"          # both parents are graduates
+  father_occupation: "Teacher"
+  mother_occupation: "Graduate"
+  main_earner_occupation: "Teacher"        # father, the main household earner
+
+background_check:   # all clean — good to take up UK employment with no issues
+  criminal_record: "No"                    # no convictions, cautions or police cases — completely clean
+  police_cases: "No"
+  willing_background_check: "Yes"          # happy to undergo DBS / background / reference / vetting checks
+  health: "Good — no long-term health conditions or illnesses"
+  disability: "No"
+  neurodiverse: "No"
+  right_to_work_clean: "Yes — full right to work in the UK on the Graduate visa, no restrictions or issues"
+
+target_roles:
+  - "Data Scientist (incl. Marketing Data Scientist / MMM)"
+  - "AI / Machine Learning Engineer (GenAI, RAG, NLP)"
+  - "Analytics Engineer"
+  - "Data Analyst / Senior / Lead Data Analyst"
+
+summary: >
+  Data professional with 4+ years across retail, consumer, energy/collections and insurance domains.
+  Core stack Python, SQL, PySpark, R, Azure (Databricks/Data Factory/ML/Synapse), Power BI/Tableau.
+  Differentiator: Marketing Mix Modelling (MMM), trade-promotion optimisation and pricing/commercial
+  analytics. Recent GenAI/RAG/NLP project work during an MSc Data Science (76%, Coventry). Certified:
+  Databricks GenAI Engineer, IBM Data Science, Google Data Analytics, Microsoft PL-300 and AZ-900.
+  Strong on turning models into commercial decisions.
+
+experience:
+  - title: "Junior Data Analyst"
+    company: "Tahir Group"
+    location: "UK"
+    dates: "Sep 2025 – Present (part-time to May 2026, then full-time)"
+    notes: "QSR ops analytics — SQL/Python on sales, transactions, labour; Power BI KPI dashboards; Difference-in-Differences to measure interventions."
+  - title: "Data Scientist"
+    company: "Infosys Limited"
+    location: "India"
+    dates: "Sep 2023 – May 2025"
+    notes: "Retail/CPG: MMM + trade-promotion optimisation for a $1B+ US confectionery portfolio (trade-spend efficiency +8%); Azure Databricks/Data Factory/ML, PySpark, Power BI."
+  - title: "Data Scientist"
+    company: "Infosys Limited"
+    location: "India"
+    dates: "Aug 2022 – Sep 2023"
+    notes: "Energy/collections: RFM risk segmentation over 200K+ customers; recovery rate +14%, recovery time -12 days; A/B testing; exec Power BI dashboards."
+  - title: "Associate Data Scientist"
+    company: "Infosys Limited"
+    location: "India"
+    dates: "Feb 2022 – Aug 2022"
+    notes: "Health insurance: 1M+ claims/policy records in SQL; SLA-breach drivers; Tableau dashboards."
+
+education:
+  - "MSc Data Science — Coventry University, Coventry, UK (May 2025 – completed 19 May 2026, 76%)"
+  - "BTech Mechanical Engineering — JNTU University, India (Aug 2017 – Jun 2021, 79%)"
+
+certifications:
+  - "Databricks Certified Generative AI Engineer Associate"
+  - "IBM Data Science Professional Certificate"
+  - "Google Data Analytics Professional Certificate"
+  - "Microsoft Certified: Power BI Data Analyst Associate (PL-300)"
+  - "Microsoft Certified: Azure Fundamentals (AZ-900)"
+
+honest_gaps: >
+  Azure is my primary, production-evidenced cloud. I have ALSO used Google Cloud (BigQuery, Looker,
+  Looker Studio, Vertex AI) and AWS (SageMaker, S3, Redshift, Glue) hands-on in PERSONAL and ACADEMIC
+  projects — present these as genuine project experience, not enterprise production. Still avoid
+  overclaiming: no large-scale production data-warehouse ownership, no dbt or Snowflake in production,
+  no people-leadership, no heavy deep-learning research.
+
+project_tools:   # tools I've used HANDS-ON in personal + academic projects (present as project experience)
+  google_cloud: ["BigQuery", "Looker", "Looker Studio", "Vertex AI", "Google Cloud Storage", "Dataflow"]
+  aws: ["Amazon SageMaker", "S3", "Redshift", "Glue", "Athena", "EC2", "Lambda"]
+  note: >
+    Used in my data-science projects (RAG document assistant, ML/analytics pipelines, dashboards):
+    BigQuery/Redshift for warehousing + SQL analytics, Looker/Looker Studio for BI dashboards, Vertex
+    AI/SageMaker for model training/deployment. Hands-on at project scale, not enterprise production.
+
+# Standard answers the agent uses verbatim where a question matches.
+standard_answers:
+  coding_language: "Python"
+  heard_about_role: "LinkedIn"
+  current_company: "Tahir Group"
+  years_experience: "4+"
+  reason_for_leaving: "Looking for a full-time role that uses my data science / MMM strengths more fully."
+  references: "Available on request."
+  criminal_record: "No"
+  happy_to_relocate: "Yes"
+
+# COMMON APPLICATION QUESTIONS answered in Manoj's voice. The agent matches loosely and can adapt
+# the wording to the specific company (fill in the company name where relevant).
+question_bank:
+  - q: "Why do you want to work here / for this company?"
+    a: >
+      I'm drawn to the company's use of data to drive real commercial decisions, which is where I've
+      focused for the last 4 years. My MMM, pricing and analytics-engineering experience maps closely
+      to the role, and I'm keen to contribute quickly while growing with a strong data team.
+  - q: "Why are you a good fit for this role?"
+    a: >
+      I bring 4+ years turning messy commercial data into decisions — MMM and trade-promotion
+      optimisation, forecasting, segmentation and risk analytics — on Python/SQL/PySpark/Azure with
+      Power BI/Tableau, plus recent GenAI/RAG project work. I own problems end to end, from data to
+      deployed model to stakeholder story.
+  - q: "What are your strengths?"
+    a: "Commercial/marketing analytics (MMM, pricing), end-to-end delivery on Azure, and translating models into clear decisions for non-technical stakeholders."
+  - q: "What is your biggest weakness / area to develop?"
+    a: "I'm deepening large-scale cloud data-warehousing beyond Azure (BigQuery/Snowflake); I pick up new tools fast and am actively learning."
+  - q: "Describe a project you're proud of."
+    a: >
+      Marketing Mix Modelling + trade-promotion optimisation for a $1B+ US confectionery portfolio:
+      I built log-log elasticity models in PySpark/Databricks and an optimisation that improved
+      trade-spend efficiency by ~8%, then delivered it to commercial teams via Power BI.
+  - q: "Where do you see yourself in a few years?"
+    a: "Growing into a senior data scientist / analytics leader, deep in commercial and marketing-science modelling while mentoring others."
+  - q: "Are you authorised to work in the UK?"
+    a: "Yes — I hold a UK Graduate visa and can work now without sponsorship."
+  - q: "Do you require visa sponsorship?"
+    a: "Not for UK roles now (Graduate visa). For non-UK roles I would need sponsorship."
+  - q: "What are your salary expectations?"
+    a: "Around £45,000, flexible on the overall package and the role."
+  - q: "When can you start / notice period?"
+    a: "About one month; I can be flexible."
+  - q: "Cover letter / anything else you'd like us to know?"
+    a: >
+      I'm a data scientist with 4+ years in commercial analytics (MMM, pricing, forecasting,
+      segmentation) plus recent GenAI/RAG work, an MSc Data Science (Distinction) and Microsoft
+      certifications. I'd bring immediate, hands-on value and am excited about this role.
+
+# HOW TO WRITE open-ended answers (tone the agent should imitate):
+voice: >
+  First person, warm but professional, concise (2-4 sentences unless more is asked). UK spelling,
+  no em-dashes, no buzzword-stuffing. Always grounded in the real experience above — never invent
+  tools, employers, figures or qualifications. If a question asks about something I lack, be honest
+  and pivot to the closest real, transferable experience.

@@ -47,6 +47,8 @@ search:
   require_bucket: false           # strict: keep ONLY jobs from your 750 target companies (max focus)
   global_search: true            # v2 GLOBAL: keep non-UK roles and RANK by geo_score (UK>EU>world +
                                  # visa sponsorship) instead of hard-dropping them. false = UK-only.
+  intl_visa_strict: true         # STRICT: keep a NON-UK role ONLY if it offers or is likely to offer
+                                 # visa sponsorship. UK roles always kept. (International = sponsors only.)
 
 seniority:
   include:                       # role must match one of these (on the TITLE); covers BOTH categories
@@ -224,10 +226,37 @@ scoring:
   max_tailor_per_run: 15         # deep ATS recommendations generated per run (premium models)
   verify_threshold: 70           # two-model consensus: re-check DeepSeek picks >= this with Gemini (0 = off)
   # LAYERED FIT-SCORE (3 models) — the anti-false-negative net (never trap a good job at a low fit):
+  # DeepSeek scores all -> GPT-5.6-sol re-checks everything under l2 -> Gemini 2.5 Pro re-checks any
+  # still under l3. Keep the HIGHER score. (Rescue model/provider set in the `llm:` block below.)
   guard_important: true          # master on/off for the layered re-check
-  rescue_l2_threshold: 60        # Gemini 2.5 Pro re-checks EVERY job DeepSeek scored below this
-  rescue_l3_threshold: 35        # GPT-5.6-terra re-checks any still below this; keep the HIGHER score
-  max_rescue_per_run: 200        # cap on jobs escalated per chunk (important/bucket jobs first)
+  rescue_l2_threshold: 85        # Layer 2 (GPT-5.6-sol) re-checks EVERY job DeepSeek scored below this
+  rescue_l3_threshold: 60        # Layer 3 (Gemini 2.5 Pro) re-checks any still below this
+  max_rescue_per_run: 300        # cap on jobs escalated per chunk (important/bucket jobs first)
+
+apply:                           # Phase-1 auto-apply (direct-employer ATS only; never Indeed/LinkedIn)
+  enabled: true
+  threshold: 85                  # only queue jobs scored >= this for auto-apply
+  cv_dir: "data/cvs"             # the 9 role CVs (chosen per job by cv_match, never tailored)
+  pause_before_submit: true      # (kept) manual review flow when auto_submit is false
+  auto_submit: false             # true = the AI fills EVERYTHING and clicks Submit; false = fills + pauses
+                                 # (override per run with --submit). Start false, watch it, then flip true.
+  answers:                       # your standard application answers — the AI form-filler uses these to
+                                 # answer dropdowns / radios / custom questions AS you. Edit freely.
+    right_to_work: "I have a Graduate Visa (eligible to work in the UK now without sponsorship)"
+    needs_sponsorship_uk: "No"
+    coding_language: "Python"
+    notice_period: "1 month"
+    ideal_start_date: "Within 1 month of an offer"
+    salary_expectation_gbp: "45000"
+    willing_to_relocate: "Yes"
+    current_company: "Tahir Group"
+    years_experience: "4+"
+    heard_about_role: "LinkedIn"
+    gender: "Male"
+    ethnicity: "Asian"
+    age_bracket: "25-29"
+    disability: "No"
+    consent: "Yes"
 
 notify:
   # 2.0: every run sends a detailed REPORT card + the best jobs by importance (top100 > bucket >
@@ -247,22 +276,20 @@ sources:
     enabled: true
     country: "gb"                # PRIMARY country (runs ALL queries; others run the first N core queries)
     max_queries_per_country: 5   # credit control: non-primary countries only run this many core queries
-    countries:                   # priority order: UK > EU > rest of world (Adzuna country codes)
-      - "gb"                     # United Kingdom (tier 1)
-      - "ie"                     # Ireland (tier 2 / EU)
-      - "de"                     # Germany
+    countries:                   # UK first, then the user's EU priority-1 + priority-2 that Adzuna
+                                 # supports. (Ireland/Denmark/Sweden/Finland/Norway/Luxembourg/Japan/
+                                 # Korea/UAE have no Adzuna endpoint -> covered by the LinkedIn SERP below.)
+      - "gb"                     # United Kingdom
+      - "de"                     # Germany (EU p1)
       - "nl"                     # Netherlands
+      - "at"                     # Austria
       - "fr"                     # France
-      - "es"                     # Spain
-      - "it"                     # Italy
-      - "pl"                     # Poland
       - "ch"                     # Switzerland
-      - "us"                     # United States (tier 3)
-      - "ca"                     # Canada
+      - "be"                     # Belgium
+      - "ca"                     # Canada (p2)
       - "au"                     # Australia
       - "nz"                     # New Zealand
       - "sg"                     # Singapore
-      - "in"                     # India
   ats: { enabled: true }         # Greenhouse/Lever/Ashby/SmartRecruiters/Workday/Workable/Recruitee/Eightfold
   brightdata:                    # Google job search via Bright Data SERP API (main engine)
     enabled: true
@@ -282,14 +309,29 @@ sources:
     nhs_sectors: ["Insurance, Health & Pharma"]             # jobs.nhs.uk site: queries on this sector's run
     linkedin_site: true          # dedicated site:uk.linkedin.com/jobs stream (UK LinkedIn depth)
     indeed_site: true            # dedicated site:uk.indeed.com stream (UK Indeed depth)
-    serp_countries:              # per-country dedicated LinkedIn + Indeed SERP streams (EU + non-EU).
-                                 # This is Tier-2 global reach; trim/extend to manage Bright Data credits.
-      - { name: "Ireland",        linkedin: true, indeed: "ie.indeed.com" }
-      - { name: "Germany",        linkedin: true, indeed: "de.indeed.com" }
-      - { name: "Netherlands",    linkedin: true, indeed: "nl.indeed.com" }
-      - { name: "France",         linkedin: true, indeed: "fr.indeed.com" }
-      - { name: "United States",  linkedin: true, indeed: "indeed.com" }
-      - { name: "Canada",         linkedin: true, indeed: "ca.indeed.com" }
+    serp_countries:              # per-country LinkedIn SERP streams (Indeed omitted: it noindexes job
+                                 # pages so Google can't scrape them). EU priority-1 first, then p2.
+      # --- EU priority 1 ---
+      - { name: "Ireland",     linkedin: true }
+      - { name: "Germany",     linkedin: true }
+      - { name: "Netherlands", linkedin: true }
+      - { name: "Austria",     linkedin: true }
+      - { name: "Denmark",     linkedin: true }
+      - { name: "France",      linkedin: true }
+      - { name: "Sweden",      linkedin: true }
+      - { name: "Finland",     linkedin: true }
+      - { name: "Norway",      linkedin: true }
+      - { name: "Switzerland", linkedin: true }
+      - { name: "Luxembourg",  linkedin: true }
+      - { name: "Belgium",     linkedin: true }
+      # --- priority 2 (rest of world) ---
+      - { name: "Canada",      linkedin: true }
+      - { name: "Australia",   linkedin: true }
+      - { name: "New Zealand", linkedin: true }
+      - { name: "Singapore",   linkedin: true }
+      - { name: "Japan",       linkedin: true }
+      - { name: "South Korea", linkedin: true }
+      - { name: "UAE",         linkedin: true }
     extra_queries:               # broad market queries (3 categories) - run on the daily full/broad run
       # data science
       - "data scientist United Kingdom"
@@ -381,6 +423,11 @@ llm:
   tailor_model: "gpt-5.6-terra"
   # escalation model for big score disagreements (optional; used via verify fallback)
   escalate_model: "deepseek-v4-pro"
+  # --- layered fit-score rescue models (see scoring.rescue_* thresholds) ---
+  rescue_l2_provider: "openai"       # Layer 2: re-checks every job under 85
+  rescue_l2_model: "gpt-5.6-sol"     # fast/cheap OpenAI tier (high volume, so cheap tier)
+  rescue_l3_provider: "gemini"       # Layer 3: re-checks any still under 60
+  rescue_l3_model: "gemini-2.5-pro"  # strongest reasoning for the toughest low scores
   # default per-provider models (used when a task falls back to that provider)
   gemini_model: "gemini-2.5-pro"
   openai_model: "gpt-5.6-luna"

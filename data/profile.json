@@ -3,9 +3,9 @@
 
   "name": "Manoj Ram Mopati",
 
-  "headline": "Data Scientist with 3+ years' commercial experience across retail, consumer goods, insurance and lending analytics. Differentiator: Marketing Mix Modelling (MMM), trade-promotion optimisation and pricing/revenue analytics. Strong in Python, SQL, PySpark, R, machine learning, Azure (Databricks/Data Factory/Data Lake/Azure ML), Power BI/Tableau, and GenAI/RAG/LLM. MSc Data Science (Distinction, Coventry). Microsoft certified (Azure, Power BI, Fabric).",
+  "headline": "Data Scientist with 4+ years' commercial experience across retail, consumer goods, energy/collections and insurance analytics, now a UK-based Junior Data Analyst (Tahir Group). Differentiator: Marketing Mix Modelling (MMM), trade-promotion optimisation and pricing/revenue analytics. Strong in Python, SQL, PySpark, R, machine learning, Azure (Databricks/Data Factory/Data Lake/Azure ML/Synapse), Power BI/Tableau, and GenAI/RAG/LLM/NLP. MSc Data Science (76%, Coventry). Certified: Databricks GenAI Engineer, IBM Data Science, Google Data Analytics, Microsoft PL-300 and AZ-900.",
 
-  "seniority": "Mid-level individual contributor, 3+ years work experience plus MSc. Level rules: for DATA SCIENCE / AI-ENGINEER / ML-ENGINEER / MARKETING DATA SCIENTIST / ANALYTICS ENGINEER /DATA ANALYST / SENIOR DATA ANALYST roles, target mid / associate / lead / principal / junior / senior level (NOT staff, manager, head-of, director). For DATA ANALYST roles, mid AND senior/lead IC are BOTH wanted (his profile genuinely fits senior/lead Data Analyst). Never people-management, head-of or director roles in any category.",
+  "seniority": "Mid-level individual contributor, 4+ years work experience plus MSc. Level rules: for DATA SCIENCE / AI-ENGINEER / ML-ENGINEER / MARKETING DATA SCIENTIST / ANALYTICS ENGINEER /DATA ANALYST / SENIOR DATA ANALYST roles, target mid / associate / lead / principal / junior / senior level (NOT staff, manager, head-of, director). For DATA ANALYST roles, mid AND senior/lead IC are BOTH wanted (his profile genuinely fits senior/lead Data Analyst). Never people-management, head-of or director roles in any category.",
 
   "target_categories": {
     "data-science": ["Data Scientist", "Associate/Junior/Graduate Data Scientist", "Marketing Data Scientist", "MMM / Marketing Science", "Pricing / Revenue Management Data Scientist", "Customer / Product Data Scientist", "Risk / Fraud Analytics Data Scientist", "Applied Scientist", "Decision Scientist"],
@@ -29,15 +29,18 @@
     "stakeholder communication", "data storytelling", "Agile / Jira"
   ],
   "skills_secondary_familiar": [
-    "GCP (BigQuery, Vertex AI, Cloud Storage)", "AWS (S3, SageMaker, Redshift, EC2, Lambda)",
-    "note: Azure is the PRIMARY, production-evidenced cloud; GCP and AWS are working/secondary familiarity - credit as breadth, do not present as deep production experience unless a concrete example exists"
+    "GCP: BigQuery, Looker, Looker Studio, Vertex AI, Cloud Storage, Dataflow (used hands-on in personal/academic projects)",
+    "AWS: SageMaker, S3, Redshift, Glue, Athena, EC2, Lambda (used hands-on in personal/academic projects)",
+    "note: Azure is the PRIMARY, production-evidenced cloud; GCP and AWS (incl. BigQuery, Looker, SageMaker) are used at PROJECT scale in personal/academic work - credit them as real project experience, but do not present as large-scale enterprise production."
   ],
-  "honest_gaps": "Do NOT claim as hands-on without a concrete example: deep production BigQuery or Looker (has Looker STUDIO, not Looker), dbt, Snowflake, large-scale AWS/GCP production data-warehouse ownership, senior people-leadership, and heavy deep-learning research. Name these as legitimate JD gaps, never invent them.",
+  "honest_gaps": "Azure is the primary production-evidenced cloud. GCP (BigQuery, Looker, Vertex AI) and AWS (SageMaker, Redshift) ARE real but at personal/academic project scale - present as project experience, not enterprise production. Do NOT claim as production without evidence: dbt, Snowflake, large-scale cloud data-warehouse ownership, senior people-leadership, heavy deep-learning research. Name these as legitimate JD gaps, never invent them.",
 
   "certifications": [
-    "Microsoft Certified: Azure Fundamentals (AZ-900)",
+    "Databricks Certified Generative AI Engineer Associate",
+    "IBM Data Science Professional Certificate",
+    "Google Data Analytics Professional Certificate",
     "Microsoft Certified: Power BI Data Analyst Associate (PL-300)",
-    "Microsoft Certified: Fabric Analytics Engineer Associate (DP-600)"
+    "Microsoft Certified: Azure Fundamentals (AZ-900)"
   ],
 
   "target_sectors": [
@@ -66,7 +69,7 @@
     "a UK role (top priority, no sponsorship needed) OR a non-UK role that offers or is likely to offer visa sponsorship",
     "genuine data science, machine learning, Gen AI, analytics-engineering or applied-analytics responsibilities",
     "hands-on with SQL/Python and a relevant stack (Azure/PySpark/ML, or SQL/Python/Power BI/Tableau for analyst roles)",
-    "level suitable for 3+ years (mid IC for DS/AI; mid or senior/lead for Data Analyst)"
+    "level suitable for 4+ years (mid IC for DS/AI; mid or senior/lead for Data Analyst)"
   ],
 
   "strong_positive_signals": [
@@ -90,11 +93,11 @@
   ],
 
   "portfolio_project_highlights": [
-    "SRM & Trade-Promotion Optimisation + Marketing Mix Modelling: PySpark, Databricks, Python, R, log-log elasticity, baseline vs incremental decomposition, OR-Tools, ROI/scenario simulation.",
-    "Enterprise Health-Insurance ML Pipeline: PySpark medallion (Bronze/Silver/Gold), scikit-learn, Docker, GitHub Actions CI/CD, batch-scored churn/fraud/high-cost models.",
-    "RFM Debt-Recovery Analytics: SQL + Python RFM over 200K+ customers, risk tiering, Streamlit dashboard (raised recovery 14%, cut recovery time 12 days).",
-    "Customer Churn Prediction Service: Random Forest, FastAPI, Docker, Azure Container Apps, GitHub Actions CI/CD.",
-    "RAG Analytics Assistant: GenAI retrieval-augmented assistant (LangChain, FAISS, Streamlit) for source-grounded business-report summaries."
+    "AI Job-Search & Matching Engine: production multi-model LLM system (OpenAI/Gemini/DeepSeek) ingesting 40+ ATS/job-board sources into Supabase with cost-aware three-tier fit scoring, consensus verification, ghost-job detection, Telegram alerts and a Streamlit dashboard.",
+    "RAG Doc Analytics Assistant: retrieval-augmented assistant (LangChain, FAISS, Streamlit, Gemini) over multi-format business reports with page-level citations, semantic retrieval and automated evaluation.",
+    "Health Insurance ML Pipeline: PySpark + Delta Lake medallion platform (star-schema marts) with churn/fraud/high-cost-claim models, MLflow, Docker, pytest, GitHub Actions CI/CD, Azure Container Apps and Power Apps dashboards.",
+    "Consumer Review Intelligence (NLP): sentiment classification over 10K+ Amazon reviews with BoW/TF-IDF and SVM/Naive Bayes/Random Forest tuning to surface sentiment inconsistencies for marketing optimisation.",
+    "Infosys MMM & Trade-Promotion Optimisation: PySpark/Databricks log-log elasticity MMM and trade-spend optimisation for a $1B+ US confectionery portfolio (trade-spend efficiency +8%); RFM debt-recovery segmentation over 200K+ customers (+14% recovery, -12 days)."
   ],
 
   "scoring_rubric": "Score how well the candidate's REAL, evidenced experience matches the job's HARD requirements TODAY (see fit_score STRICT method) - do not inflate for merely transferable skills, and name missing hard requirements. THREE first-class categories: DATA SCIENCE (incl Marketing Data Scientist/MMM - his top differentiator), AI ENGINEER (ML/GenAI/RAG - has project experience, lighter commercial ML-eng experience), and DATA ANALYSIS (Data Analyst incl SENIOR/LEAD, Analytics Engineer, BI/Insight/MI). 90-100: direct UK employer, mid IC (or senior/lead for Data Analyst), strong overlap with his evidenced stack (Python/SQL/PySpark/Azure/ML/Power BI) AND clear relevance to MMM/pricing/forecasting/segmentation/risk-fraud/GenAI/analytics-engineering/BI. 80-89: strong with minor gaps (partial stack or adjacent sector) - INCLUDES solid Data Analyst / Analytics Engineer / BI roles and government/civil-service/NHS analyst roles (treat as strong, not backup), and Marketing-DS roles where MMM is only implied. 65-79: title/level fit but domain or tooling weaker, or a hard tool he lacks is 'nice to have'. 50-64: weak backups (Excel-light reporting with little SQL, or roles well below level). Under 50: senior/lead/manager for DS/AI (level too high), any people-management, agencies, vague reposts, clearance-required, pure-software or Excel-only roles, and NON-UK roles that explicitly refuse sponsorship. Adjacent-but-not-same tools (Azure vs BigQuery, Looker Studio vs Looker) are PARTIAL credit, never full. GEOGRAPHY (v2 global): a UK role always outranks an equal-fit non-UK role; among non-UK, EU outranks rest-of-world; and within non-UK, explicit/likely visa sponsors outrank sponsorship-silent roles. Do NOT ghost_flag a role merely for being non-UK. Set ghost_flag=true for expired/closed, agency 'our client' reposts, duplicates, or vague listings with no named employer / responsibilities. Report the role's country and whether it offers/likely offers visa sponsorship when known."

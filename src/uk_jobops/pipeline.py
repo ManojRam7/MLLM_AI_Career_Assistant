@@ -180,12 +180,28 @@ class Pipeline:
         # roles and instead rank them by geo_score (UK>EU>world + visa sponsorship). When OFF, we drop
         # any job whose location/title names a non-UK country/foreign city (original UK-only behaviour).
         global_on = bool(search.get("global_search", False))
+        from .sources.brightdata_serp import nonuk_country
+        _intl_dropped = 0
         if not global_on:
-            from .sources.brightdata_serp import nonuk_country
             _b4 = len(targets)
             targets = [j for j in targets
                        if not nonuk_country(f"{j.location or ''} {j.locations or ''} {j.title or ''}")]
             _nonuk_dropped = _b4 - len(targets)
+        elif search.get("intl_visa_strict", True):
+            # STRICT INTERNATIONAL RULE: keep UK roles always; keep a NON-UK role ONLY if it offers or
+            # is likely to offer visa sponsorship (he needs sponsorship abroad). Drop the rest at ingest,
+            # so the International section only ever contains visa-providing opportunities.
+            from .geo import visa_signal
+            _b4 = len(targets)
+            _kept = []
+            for j in targets:
+                blob = f"{j.location or ''} {j.locations or ''} {j.title or ''}"
+                if not nonuk_country(blob):
+                    _kept.append(j)                                                   # UK / unknown -> keep
+                elif visa_signal(j.description or "", j.company or "") in ("sponsors", "likely"):
+                    _kept.append(j)                                                   # non-UK + sponsor -> keep
+            _intl_dropped = _b4 - len(_kept)
+            targets = _kept
         # EXPIRY gate: drop jobs whose posted date is older than the max age (keeps look-back to RECENT
         # jobs; a role posted 200 days ago is expired). Unparseable dates are kept.
         import datetime as _dtp
@@ -294,6 +310,7 @@ class Pipeline:
         # signal + geo priority score (zero LLM cost). Backfills new AND historic rows so the
         # dashboard/Telegram always show, per job, the keywords to add AND where it is / whether it
         # sponsors — the UK>EU>world priority is driven by geo_score.
+        from .cv_match import match_cv_key
         from .geo import detect_country, geo_score, visa_signal
         from .keywords import candidate_skills, extract_keywords
         _cand = candidate_skills(self.cfg.profile, self.cfg.base_cv)
@@ -304,9 +321,10 @@ class Pipeline:
             _country = detect_country(_loc_blob, default="")
             _visa = visa_signal(_j.get("description") or "", _j.get("company") or "")
             _kw = extract_keywords(_j.get("description") or "", _cand)
+            _cv = match_cv_key(_j.get("title") or "", _j.get("description") or "")   # best-fit CV
             store.update(_j["dedupe_key"], cv_keywords=_kw.to_line(),
                          country=(_country or "Unknown"), visa_sponsorship=_visa,
-                         geo_score=geo_score(_country, _visa))
+                         geo_score=geo_score(_country, _visa), matched_cv=_cv)
         if _enrich:
             summary["enriched"] = len(_enrich)
 
@@ -410,8 +428,8 @@ class Pipeline:
                                 results[i].ghost_flag = results[i].ghost_flag and rv.ghost_flag
                         return len(low)
 
-                    n2 = _relayer(l2, "verify_provider", "verify_model", "fit-L2-Gemini")   # < 60 -> Gemini
-                    _relayer(l3, "tailor_provider", "tailor_model", "fit-L3-GPT")           # still < 35 -> GPT
+                    n2 = _relayer(l2, "rescue_l2_provider", "rescue_l2_model", "fit-L2")   # < 85 -> GPT-5.6-sol
+                    _relayer(l3, "rescue_l3_provider", "rescue_l3_model", "fit-L3")        # still < 60 -> Gemini Pro
                     if n2:
                         summary["guard_rescued"] = summary.get("guard_rescued", 0) + n2
                 for idx, job in enumerate(chunk):
@@ -468,6 +486,11 @@ class Pipeline:
                                min_fit=ncfg.get("min_fit_floor", 0), fresh_only=True)
         if not best:
             best = store.best_jobs(limit=max_alerts, min_fit=ncfg.get("min_fit_floor", 0), fresh_only=False)
+        try:
+            summary["apply_ready"] = len(store.apply_queue(
+                int(self.s.get("apply", {}).get("threshold", 95)), limit=300))
+        except Exception:
+            summary["apply_ready"] = 0
         report = build_report(summary, targets, best)
         summary["report"] = report
         Path("output/run_report.md").write_text(report_markdown(report), encoding="utf-8")

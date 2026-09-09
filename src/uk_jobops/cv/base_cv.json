@@ -2,7 +2,7 @@
   "name": "Manoj Ram Mopati",
   "default_title": "Data Scientist",
   "contact": {
-    "location": "Birmingham, UK",
+    "location": "London, UK",
     "open_to_relocation": true,
     "phone": "07810294727",
     "email": "manojrammopati111@gmail.com",
@@ -12,63 +12,70 @@
   },
   "right_to_work": "UK Graduate visa (eligible to work in the UK without sponsorship)",
   "profile_facts": [
-    "3+ years' commercial experience across retail, consumer goods, financial services (collections) and insurance at Infosys",
-    "Built Marketing Mix Models for a US billion-dollar market portfolio; trade-promotion optimisation improved profit margins 5-8% across 100+ regions",
-    "RFM risk segmentation over 200K+ customers raised debt-recovery rates 14% and cut recovery time 12 days",
-    "Production ML/analytics on Azure Databricks (Data Factory, Data Lake, Azure SQL, Azure ML) with CI/CD, Docker, Git, Azure DevOps; recent GenAI (RAG)",
-    "MSc Data Science, Coventry University (Distinction, 70%); Microsoft certified AZ-900, PL-300, DP-600"
+    "4+ years' hands-on experience across retail, consumer goods, energy/collections and insurance (Infosys) plus a current UK Junior Data Analyst role at Tahir Group",
+    "Built Marketing Mix Models (MMM) and trade-promotion optimisation for a $1B+ US confectionery portfolio; improved trade-spend efficiency by 8%",
+    "RFM risk segmentation over 200K+ customers raised debt-recovery rates 14% and cut average recovery time 12 days (validated via A/B testing)",
+    "Production ML/analytics on Azure Databricks (Data Factory, Data Lake, Azure SQL, Azure ML, Synapse, Key Vault, Entra ID, DevOps) with CI/CD and Git; recent GenAI/RAG/NLP project work",
+    "MSc Data Science, Coventry University (76%); Databricks GenAI Engineer Associate, IBM Data Science, Google Data Analytics, Microsoft PL-300 and AZ-900 certified"
   ],
   "skills": {
-    "Programming": "Python (pandas, NumPy, scikit-learn, SciPy, TensorFlow, PyTorch), SQL, PySpark, R",
-    "Machine Learning & Statistics": "Regression, classification, clustering, time series forecasting, NLP, GenAI / RAG, LLMs, Agentic AI, prompt engineering, tree-based models, RFM segmentation, feature engineering, A/B testing, hypothesis testing, statistical modelling, model deployment / lifecycle management",
-    "Cloud & MLOps": "Azure (Databricks, Data Factory, Data Lake Gen2, Azure ML, Azure SQL, Synapse Analytics, Key Vault, Entra ID / managed identities / service principals, RBAC, Container Apps, DevOps), GCP, AWS, Docker, CI/CD (GitHub Actions), Git, Apache Airflow",
-    "Data & BI": "Power BI, DAX, Power Query, Power Apps / Power Platform, Microsoft Fabric, Tableau, Looker Studio, Excel, vector databases (FAISS), ETL, data warehousing, REST API",
-    "Ways of working": "Agile / Jira, data governance, data quality, stakeholder management"
+    "Programming": "Python, PySpark, SQL, R",
+    "Analytics & BI": "Power BI, Power Platform / Power Apps, Power Query, DAX, Excel, Tableau, Looker Studio",
+    "Statistical & Business Modelling": "Marketing Mix Modelling (MMM), regression analysis, statistical modelling, hypothesis testing, A/B testing, time-series forecasting, RFM segmentation, causal analysis, Difference-in-Differences, experimentation",
+    "Data Science": "pandas, NumPy, scikit-learn, SciPy, TensorFlow, PyTorch, data quality / cleaning / wrangling / pre-processing, data visualisation, feature engineering / selection, log transformation, hyperparameter tuning, one-hot encoding, model deployment / evaluation / lifecycle management",
+    "ML & AI": "Supervised learning (regression, classification), tree-based & ensemble models, unsupervised learning (clustering), time-series forecasting, neural networks, NLP, LLMs, Generative AI, RAG, vector embeddings, semantic search, agentic AI, prompt engineering",
+    "Cloud & MLOps": "Azure Databricks, Data Factory, Data Lake Storage, Azure SQL, Azure Machine Learning, Azure Synapse Analytics, Azure Key Vault, Microsoft Entra ID, managed identities, service principals, Azure RBAC, Azure DevOps, Docker, Git / GitHub, CI/CD (GitHub Actions), Apache Airflow",
+    "Other": "HDFS fundamentals, MapReduce concepts, data privacy, GDPR awareness, REST APIs, ETL, KPIs, data warehousing, vector databases (FAISS), ad-hoc analysis, Agile, Jira, Jupyter, R Studio, VS Code"
   },
   "experience": [
     {
-      "title": "Data Scientist - Infosys Limited, Bangalore, India",
+      "title": "Junior Data Analyst - Tahir Group, UK",
+      "dates": "Sep 2025 - Present (Part-time Sep 2025 - May 2026 | Full-time May 2026 - Present)",
+      "bullets": [
+        "Analysed store-level sales, transaction and labour data using SQL and Python, identifying revenue trends, performance gaps and labour-efficiency opportunities across QSR operations.",
+        "Developed Power BI dashboards and KPI reporting (revenue, transactions, average transaction value, labour cost %, sales per labour hour, store productivity) to support operational decision-making.",
+        "Applied statistical analysis and Difference-in-Differences to evaluate operational interventions, comparing pre/post performance across treatment and comparison stores to quantify incremental business impact."
+      ]
+    },
+    {
+      "title": "Data Scientist - Infosys Limited, India (Retail)",
       "dates": "Sep 2023 - May 2025",
       "bullets": [
-        "Built a sales-portfolio analytics and reporting platform using Azure SQL and Power BI for a US billion-dollar market, improving revenue management.",
-        "Implemented Marketing Mix Modelling (MMM) on sales, pricing, promotion and marketing data to measure strategy effectiveness and optimise marketing-spend allocation.",
-        "Built and validated predictive models (log-log linear regression) over 3+ years of data with Python, PySpark, SQL and R across an end-to-end data science workflow.",
-        "Designed and deployed the end-to-end ML lifecycle (deployment and monitoring) on Azure Databricks, Data Lake, Azure SQL, Azure ML, DevOps and Git in production.",
-        "Created trade-promotion optimisation tools used across 100+ regions, increasing profit margins by 5-8% through strategic trade-merchandise planning.",
-        "Collaborated with data scientists, engineers, product owners and business analysts on requirements, ingestion pipelines and translating model outputs into business insights."
+        "Developed a Power BI analytics platform for a $1B+ US confectionery portfolio, improving profitable revenue-management performance.",
+        "Built Marketing Mix Models (MMM) to quantify marketing and trade-promotion effectiveness, enabling data-driven investment optimisation.",
+        "Processed and analysed 3+ years of sales, retail and promotional records using SQL, Python, PySpark and R for predictive modelling and commercial analytics.",
+        "Designed trade-promotion optimisation solutions that improved trade-spend efficiency by 8% and supported profit-maximising promotional strategies.",
+        "Delivered actionable insights on promotional ROI, sales attribution and revenue drivers for strategic commercial decision-making.",
+        "Built and deployed scalable analytics workflows on Azure Databricks, Data Factory, Data Lake, Azure SQL and Azure ML with Agile, CI/CD and Azure DevOps."
       ]
     },
     {
-      "title": "Associate Data Scientist - Infosys Limited, Bangalore, India",
-      "dates": "Dec 2022 - Sep 2023",
+      "title": "Data Scientist - Infosys Limited, India (Energy)",
+      "dates": "Aug 2022 - Sep 2023",
       "bullets": [
-        "Built an RFM segmentation model in Python over 200K+ customers (financial-services collections) using payment behaviour and outstanding debt to classify high-, medium- and low-risk profiles.",
-        "Designed risk-tiered debt-recovery interventions that increased recovery rates by 14% and cut average recovery time by 12 days.",
-        "Wrote complex SQL and Python for data cleansing and transformation on large datasets.",
-        "Built executive Power BI and Tableau dashboards covering customer segments, debt ageing, exposure and recovery status."
+        "Developed an RFM-based customer risk-segmentation model for 200K+ customers using SQL and Python to identify high-, medium- and low-risk debt profiles for targeted recovery, increasing recovery rates by 14% and reducing average recovery time by 12 days, validated via A/B testing.",
+        "Built executive Power BI dashboards visualising customer segments, debt ageing, recovery performance and portfolio exposure to enable data-driven decision-making for senior leadership."
       ]
     },
     {
-      "title": "Associate Data Analyst - Infosys Limited, Bangalore, India",
-      "dates": "Feb 2022 - Dec 2022",
+      "title": "Associate Data Scientist - Infosys Limited, India (Health)",
+      "dates": "Feb 2022 - Aug 2022",
       "bullets": [
-        "Analysed 1M+ claims, policy and provider records in SQL, Power BI and Excel to surface SLA breaches, risk patterns and payment delays.",
-        "Built Power BI dashboards monitoring real-time claim risk and resolution bottlenecks for operations teams.",
-        "Partnered with cross-functional teams to present insights and support reporting and documentation."
+        "Processed 1M+ insurance claims and policy records using SQL to identify operational bottlenecks and key drivers of SLA breaches, supporting process-improvement initiatives.",
+        "Developed Tableau dashboards and analytics solutions for business reporting through efficient data transformation, feature engineering and extraction."
       ]
     }
   ],
   "projects": [
-    {"name": "RAG Analytics Assistant for Business Reports", "text": "GenAI assistant using retrieval-augmented generation (LangChain, FAISS, Streamlit) to query business reports and return source-grounded, cited summaries, with an offline evaluation harness. (github.com/ManojRam7)"},
-    {"name": "Health Insurance ML Pipeline", "text": "medallion (Bronze-Silver-Gold) PySpark pipeline over 62K+ records training churn, fraud-risk and high-cost-claim models, with Docker and CI/CD. (github.com/ManojRam7/health_insurance_project)"},
-    {"name": "Customer Churn Prediction Service", "text": "Random Forest churn model served via FastAPI, containerised with Docker and deployed to Azure Container Apps with GitHub Actions CI/CD. (github.com/ManojRam7/CustomerChurn_Prediction)"},
-    {"name": "AI Job Search & Matching Engine", "text": "Production AI platform (Python, OpenAI/DeepSeek/Gemini APIs, Supabase/PostgreSQL, ATS + job-board APIs) automating job ingestion and batched candidate-fit scoring, with rubric-grounded multi-model verification, ghost-job detection, visa-sponsorship and geo ranking, Telegram alerts and a Streamlit/React dashboard with a Kanban application tracker. (github.com/ManojRam7/MLLM_AI_Career_Assistant)"},
-    {"name": "Consumer Review Intelligence (NLP)", "text": "Analysed 10K+ Amazon Books reviews with NLP preprocessing, Bag-of-Words and TF-IDF; compared SVM, Naive Bayes and Random Forest with hyperparameter tuning to surface sentiment-rating inconsistencies for campaign optimisation and brand monitoring."}
+    {"name": "AI Job-Search & Matching Engine", "text": "Architected a production, fully-automated multi-model LLM system (Python; OpenAI GPT, Google Gemini 2.5 Pro, DeepSeek) that ingests roles from 40+ ATS and job-board sources (Bright Data SERP, Reed, Adzuna, Greenhouse/Lever/Ashby/Workday) into a Supabase database and runs rubric-grounded, batched candidate-fit scoring on a daily GitHub Actions schedule. Cost-aware three-tier inference: a fast model scores at scale with automatic escalation to stronger models for low-confidence cases, two-model consensus verification and ghost-job detection, surfaced via Telegram alerts and a Streamlit analytics dashboard. (github.com/ManojRam7/MLLM_AI_Career_Assistant)"},
+    {"name": "RAG Doc Analytics Assistant for Business Reports", "text": "RAG document-intelligence assistant (LangChain, FAISS, Streamlit, Gemini API) that ingests multi-format reports, generates embeddings, retrieves evidence and produces context-aware answers with page-level citations; vector embeddings, semantic retrieval and vector search, automated evaluation monitoring and unit testing. (github.com/ManojRam7)"},
+    {"name": "Health Insurance ML Pipeline", "text": "Enterprise-style end-to-end data science and analytics platform in PySpark and Delta Lake: medallion layers, fact/dim tables, star-schema marts, churn/fraud/high-cost-claim classification models, MLflow experiment tracking, batch scoring, data-quality monitoring, scheduling, Docker, pytest, GitHub Actions CI/CD, Azure Container Apps and Power Apps dashboards. (github.com/ManojRam7/health_insurance_project)"},
+    {"name": "Consumer Review Intelligence (NLP)", "text": "NLP sentiment-classification pipeline over 10K+ Amazon Books reviews (Hugging Face): Bag-of-Words and TF-IDF feature extraction, SVM, Naive Bayes and Random Forest with hyperparameter tuning to identify sentiment inconsistencies and support marketing optimisation."}
   ],
   "education": [
-    {"degree": "MSc Data Science - Coventry University, UK", "meta": "May 2025 - May 2026 | Distinction (70%)"},
-    {"degree": "BTech Mechanical Engineering - Visvodaya Engineering College, India", "meta": "2017 - 2021 | 65% (UK 2:1 equivalent)"}
+    {"degree": "MSc Data Science - Coventry University, UK", "meta": "May 2025 - May 2026 | 76%"},
+    {"degree": "BTech Mechanical Engineering - JNTU University, India", "meta": "Aug 2017 - Jun 2021 | 79%"}
   ],
-  "certifications": "Microsoft Certified - Azure Fundamentals (AZ-900), Power BI Data Analyst Associate (PL-300), Fabric Analytics Engineer Associate (DP-600)",
-  "extra_skills_pool": ["MMM", "incrementality", "causal inference", "multi-touch attribution", "Bayesian modelling", "uplift modelling", "Power Apps", "Power Automate", "Databricks on AWS", "LLM fine-tuning (LoRA/QLoRA)", "vector databases (FAISS)", "prompt engineering", "responsible AI"]
+  "certifications": "Databricks Certified Generative AI Engineer Associate, IBM Data Science Professional Certificate, Google Data Analytics Professional Certificate, Microsoft Certified: Power BI Data Analyst Associate (PL-300), Microsoft Certified: Azure Fundamentals (AZ-900)",
+  "extra_skills_pool": ["MMM", "incrementality", "causal inference", "multi-touch attribution", "Bayesian modelling", "uplift modelling", "Power Apps", "Power Automate", "LLM fine-tuning (LoRA/QLoRA)", "vector databases (FAISS)", "prompt engineering", "responsible AI"]
 }

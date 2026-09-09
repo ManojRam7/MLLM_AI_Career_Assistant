@@ -62,6 +62,7 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cv_keywords TEXT;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS country TEXT DEFAULT '';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS visa_sponsorship TEXT DEFAULT '';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS geo_score INTEGER DEFAULT 0;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS matched_cv TEXT DEFAULT '';
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_fit_idx ON jobs(fit_score DESC);
 
@@ -75,6 +76,34 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     summary_json JSONB
 );
 ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS summary_json JSONB;
+
+CREATE TABLE IF NOT EXISTS apply_log (
+    id          BIGSERIAL PRIMARY KEY,
+    dedupe_key  TEXT,
+    company     TEXT,
+    role_title  TEXT,
+    country     TEXT DEFAULT '',
+    url         TEXT,
+    cv          TEXT,
+    status      TEXT DEFAULT 'submitted',
+    screenshot  BYTEA,
+    applied_at  TIMESTAMPTZ DEFAULT now()
+);
+-- URLs the user queues from the Streamlit control panel (phone/laptop) for the LOCAL runner to apply to
+CREATE TABLE IF NOT EXISTS apply_requests (
+    id           BIGSERIAL PRIMARY KEY,
+    url          TEXT NOT NULL,
+    title        TEXT DEFAULT '',
+    company      TEXT DEFAULT '',
+    source       TEXT DEFAULT 'pasted',   -- 'queue' (from scored jobs) | 'pasted' (manual URL)
+    auto_submit  BOOLEAN DEFAULT FALSE,
+    status       TEXT DEFAULT 'queued',   -- queued | processing | done | needs_submit | skipped | error
+    note         TEXT DEFAULT '',
+    requested_at TIMESTAMPTZ DEFAULT now(),
+    processed_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS apply_requests_url_open
+    ON apply_requests (url) WHERE status IN ('queued','processing');
 """
 
 UPSERT = """
@@ -266,7 +295,8 @@ class Store:
         # trusted board are untouched)
         agg = (r"(builtin|bebee|expertini|welcometothejungle|otta\.|datasciencejobs|stacksignal|"
                r"efinancialcareers|canarywharfian|bulldogjob|alooba|glassdoor|artificialintelligencejobs|"
-               r"harnham|jobrapido|neuvoo|talent\.com|jooble|whatjobs|opendatascience|careerjet|jobsora)")
+               r"harnham|jobrapido|neuvoo|talent\.com|jooble|whatjobs|opendatascience|careerjet|jobsora|"
+               r"hackajob)")
         nonuk_clause = ("""
             OR (
                 (title || ' ' || coalesce(description,'') || ' ' || coalesce(location,'')) ~* %s
@@ -338,6 +368,7 @@ class Store:
         return self._rows(
             "SELECT dedupe_key,title,company,location,locations,description FROM jobs "
             "WHERE cv_keywords IS NULL OR cv_keywords = '' OR country IS NULL OR country = '' "
+            "OR matched_cv IS NULL OR matched_cv = '' "
             "ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, fit_score DESC LIMIT %s", (limit,))
 
     def jobs_needing_score(self, limit: int = 40) -> list[dict[str, Any]]:
@@ -363,7 +394,7 @@ class Store:
         return self._rows(
             "SELECT dedupe_key,title,company,location,locations,source,in_bucket,bucket_tier,category,sector,fit_score,seniority,status,"
             "tracked,is_custom,notes,applied_at,url,cv_path,cover_path,fit_reasoning,ghost_flag,cv_keywords,"
-            "country,visa_sponsorship,geo_score,posted_date,first_seen_at "
+            "country,visa_sponsorship,geo_score,matched_cv,posted_date,first_seen_at "
             "FROM jobs ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, geo_score DESC, fit_score DESC, first_seen_at DESC LIMIT %s",
             (limit,))
 
@@ -373,6 +404,138 @@ class Store:
             "fit_reasoning,url,recommendations,cover_text,cv_keywords "
             "FROM jobs WHERE recommendations IS NOT NULL OR cv_keywords IS NOT NULL "
             "ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, fit_score DESC LIMIT %s", (limit,))
+
+    # known ATS / direct-employer hosts (auto-apply targets — NOT Indeed/LinkedIn aggregators)
+    _ATS_URL = (r"(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com|smartrecruiters\.com|"
+                r"workable\.com|recruitee\.com|eightfold\.ai|personio\.|teamtailor\.com|"
+                r"breezy\.hr|bamboohr\.com|icims\.com|higher\.gs\.com|wd\d+\.myworkdayjobs)")
+
+    _APPLIED_STATUSES = "('applied','interview','offer','rejected','assessment','assessment_cleared')"
+
+    def apply_queue(self, min_score: int = 95, limit: int = 100,
+                    include_applied: bool = False) -> list[dict[str, Any]]:
+        """Jobs eligible for AUTO-APPLY: score >= min_score, on a DIRECT-EMPLOYER ATS (Greenhouse/
+        Lever/Ashby/Workday/SmartRecruiters/…), NOT Indeed/LinkedIn, and (unless include_applied)
+        not already applied. Includes the matched CV so the apply agent knows which file to attach.
+        include_applied=True is for LOCAL RE-TESTING — it re-surfaces already-applied roles."""
+        status_gate = "" if include_applied else f"AND status NOT IN {self._APPLIED_STATUSES} "
+        return self._rows(
+            "SELECT dedupe_key,title,company,location,locations,url,fit_score,matched_cv,category,"
+            "sector,country,visa_sponsorship,description,status "
+            "FROM jobs WHERE is_target=TRUE AND fit_score >= %s "
+            f"{status_gate}"
+            "AND url ~* %s AND url !~* 'linkedin\\.com|indeed\\.' "
+            "ORDER BY (bucket_tier='top100') DESC, fit_score DESC LIMIT %s",
+            (min_score, self._ATS_URL, limit))
+
+    def apply_stats(self, thr: int = 85) -> tuple[dict[str, int], list[dict[str, Any]]]:
+        """Explain the apply queue at a given threshold: fit bands, direct-ATS counts, AND why
+        eligible-looking jobs don't queue — how many high-fit jobs are stuck on LinkedIn/Indeed
+        aggregator URLs (can't auto-fill), already applied, or not a target role. Plus the top
+        direct-ATS roles by fit. Single source of truth for the empty-queue message."""
+        ats = self._ATS_URL
+        nagg = "url !~* 'linkedin\\.com|indeed\\.'"          # a real employer ATS url (fillable)
+        agg = "url ~* 'linkedin\\.com|indeed\\.'"            # an aggregator url (NOT fillable)
+        applied = f"status IN {self._APPLIED_STATUSES}"
+
+        def _n(sql: str, params: tuple = ()) -> int:
+            with self.conn.cursor() as c:
+                c.execute(sql, params)
+                return int(c.fetchone()[0])
+        s = {
+            "total": _n("SELECT count(*) FROM jobs WHERE fit_score>0"),
+            "ge95": _n("SELECT count(*) FROM jobs WHERE fit_score>=95"),
+            "ge90": _n("SELECT count(*) FROM jobs WHERE fit_score>=90"),
+            "ge85": _n("SELECT count(*) FROM jobs WHERE fit_score>=85"),
+            "ge80": _n("SELECT count(*) FROM jobs WHERE fit_score>=80"),
+            "ats_total": _n(f"SELECT count(*) FROM jobs WHERE url ~* %s AND {nagg}", (ats,)),
+            "ats85": _n(f"SELECT count(*) FROM jobs WHERE fit_score>=85 AND url ~* %s AND {nagg}", (ats,)),
+            "ats90": _n(f"SELECT count(*) FROM jobs WHERE fit_score>=90 AND url ~* %s AND {nagg}", (ats,)),
+            # --- at the ACTUAL threshold: exactly why the queue is (not) empty ---
+            "thr": thr,
+            "queue": _n(f"SELECT count(*) FROM jobs WHERE is_target=TRUE AND fit_score>=%s AND url ~* %s "
+                        f"AND {nagg} AND status NOT IN {self._APPLIED_STATUSES}", (thr, ats)),
+            "ats_thr": _n(f"SELECT count(*) FROM jobs WHERE fit_score>=%s AND url ~* %s AND {nagg}", (thr, ats)),
+            "applied_thr": _n(f"SELECT count(*) FROM jobs WHERE fit_score>=%s AND url ~* %s AND {nagg} "
+                              f"AND {applied}", (thr, ats)),
+            "nontarget_thr": _n(f"SELECT count(*) FROM jobs WHERE fit_score>=%s AND url ~* %s AND {nagg} "
+                                f"AND is_target=FALSE", (thr, ats)),
+            "agg_thr": _n(f"SELECT count(*) FROM jobs WHERE fit_score>=%s AND {agg}", (thr,)),
+        }
+        top = self._rows(
+            f"SELECT title,company,url,fit_score,matched_cv,status FROM jobs WHERE url ~* %s AND {nagg} "
+            "AND fit_score>0 ORDER BY fit_score DESC LIMIT 12", (ats,))
+        return s, top
+
+    def log_apply(self, *, dedupe_key: str = "", company: str = "", role_title: str = "", country: str = "",
+                  url: str = "", cv: str = "", status: str = "submitted",
+                  screenshot: bytes | None = None) -> None:
+        """Record an auto-apply attempt (with an optional confirmation screenshot) for the activity log."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO apply_log (dedupe_key,company,role_title,country,url,cv,status,screenshot) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                (dedupe_key, company, role_title, country, url, cv, status, screenshot))
+
+    def apply_log_rows(self, limit: int = 200) -> list[dict[str, Any]]:
+        return self._rows(
+            "SELECT id,dedupe_key,company,role_title,country,url,cv,status,applied_at,"
+            "(screenshot IS NOT NULL) AS has_shot FROM apply_log ORDER BY id DESC LIMIT %s", (limit,))
+
+    def apply_screenshot(self, log_id: int) -> bytes | None:
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT screenshot FROM apply_log WHERE id=%s", (log_id,))
+            row = cur.fetchone()
+            return bytes(row[0]) if row and row[0] is not None else None
+
+    # ------------------------------------------------------------------ apply-requests queue
+    # (URLs the user queues from the Streamlit control panel; the LOCAL runner processes them.)
+    def add_apply_requests(self, items: list[dict[str, Any]]) -> int:
+        """items: [{url, title?, company?, source?, auto_submit?}]. Skips URLs already open in the queue.
+        Returns how many rows were added."""
+        added = 0
+        with self.conn.cursor() as cur:
+            for it in items:
+                url = (it.get("url") or "").strip()
+                if not url:
+                    continue
+                cur.execute(
+                    "INSERT INTO apply_requests (url,title,company,source,auto_submit,status) "
+                    "VALUES (%s,%s,%s,%s,%s,'queued') "
+                    "ON CONFLICT (url) WHERE status IN ('queued','processing') DO NOTHING RETURNING id",
+                    (url, it.get("title", ""), it.get("company", ""),
+                     it.get("source", "pasted"), bool(it.get("auto_submit", False)))
+                )
+                added += int(cur.fetchone() is not None)
+        return added
+
+    def apply_requests(self, status: str = "queued", limit: int = 100) -> list[dict[str, Any]]:
+        return self._rows(
+            "SELECT id,url,title,company,source,auto_submit,status,note,requested_at,processed_at "
+            "FROM apply_requests WHERE status=%s ORDER BY id ASC LIMIT %s", (status, limit))
+
+    def apply_requests_rows(self, limit: int = 200) -> list[dict[str, Any]]:
+        return self._rows(
+            "SELECT id,url,title,company,source,auto_submit,status,note,requested_at,processed_at "
+            "FROM apply_requests ORDER BY id DESC LIMIT %s", (limit,))
+
+    def set_apply_request_status(self, req_id: int, status: str, note: str = "") -> None:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE apply_requests SET status=%s, note=%s, "
+                "processed_at = CASE WHEN %s IN ('done','needs_submit','skipped','error') THEN now() ELSE processed_at END "
+                "WHERE id=%s", (status, note[:400], status, req_id))
+
+    def clear_apply_requests(self, which: str = "done") -> int:
+        """which = 'done' (finished), 'queued' (pending), or 'all'."""
+        with self.conn.cursor() as cur:
+            if which == "all":
+                cur.execute("DELETE FROM apply_requests")
+            elif which == "queued":
+                cur.execute("DELETE FROM apply_requests WHERE status='queued'")
+            else:
+                cur.execute("DELETE FROM apply_requests WHERE status IN ('done','skipped','error','needs_submit')")
+            return cur.rowcount or 0
 
     def best_jobs(self, *, limit: int = 12, max_age_days: int = 3, min_fit: int = 0,
                   fresh_only: bool = True) -> list[dict[str, Any]]:

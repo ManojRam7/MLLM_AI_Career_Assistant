@@ -212,13 +212,24 @@ def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
     if base.empty:
         st.info("No jobs in this view yet.")
         return
+    # Excel-style filters — every control below combines with AND (stack as many as you like).
     f1, f2, f3, f4 = st.columns([2, 2, 1, 3])
     srcs = f1.multiselect("Source", sorted(base["source"].dropna().unique()), key=f"{key_prefix}_src")
     secs = f2.multiselect("Sector", sorted(base["sector"].dropna().unique()), key=f"{key_prefix}_sec")
     only_bucket = f3.checkbox("⭐ top list", key=f"{key_prefix}_bk",
                               help="Show ONLY your bucket-list top companies (hide the '— other —' broad-market minors)")
     q = f4.text_input("Search title / company", key=f"{key_prefix}_q")
-    min_fit = st.slider("Minimum fit score", 0, 100, 0, 5, key=f"{key_prefix}_fit")
+    g1, g2, g3, g4 = st.columns([2, 2, 2, 2])
+    cat_opts = sorted([c for c in base["category"].dropna().unique() if c])
+    cat_pick = g1.multiselect("Category", cat_opts, key=f"{key_prefix}_cat") if not category else []
+    stat_pick = g2.multiselect("Status", sorted([s for s in base["status"].dropna().unique() if s]),
+                               key=f"{key_prefix}_stat")
+    co = g3.text_input("Company contains", key=f"{key_prefix}_co")
+    sort_by = g4.selectbox("Sort by", ["Newest first", "Oldest first", "Fit (high→low)", "Fit (low→high)"],
+                           key=f"{key_prefix}_sort")
+    h1, h2 = st.columns([3, 2])
+    fit_lo, fit_hi = h1.slider("Fit score range", 0, 100, (0, 100), 5, key=f"{key_prefix}_fitrange")
+    page_size = h2.selectbox("Rows per page", [25, 50, 100, 200, 500], index=1, key=f"{key_prefix}_ps")
 
     view = base
     if srcs:
@@ -227,26 +238,48 @@ def render_jobs(jobs, url, key_prefix, category=None, title="Jobs", caption=""):
         view = view[view["sector"].isin(secs)]
     if only_bucket:
         view = view[view["in_bucket"]]
+    if cat_pick:
+        view = view[view["category"].isin(cat_pick)]
+    if stat_pick:
+        view = view[view["status"].isin(stat_pick)]
+    if co:
+        view = view[view["company"].str.lower().str.contains(co.lower(), na=False)]
     if q:
         ql = q.lower()
         view = view[view["title"].str.lower().str.contains(ql, na=False)
                     | view["company"].str.lower().str.contains(ql, na=False)]
-    view = view[view["fit_score"] >= min_fit].sort_values(
-        ["fit_score", "in_bucket"], ascending=False).reset_index(drop=True)
-    view = view.copy()
+    view = view[(view["fit_score"] >= fit_lo) & (view["fit_score"] <= fit_hi)]
+    # sort — default newest→oldest by the date we fetched it
+    _datecol = "fetched" if "fetched" in view.columns else "first_seen_at"
+    if sort_by == "Newest first":
+        view = view.sort_values(_datecol, ascending=False)
+    elif sort_by == "Oldest first":
+        view = view.sort_values(_datecol, ascending=True)
+    elif sort_by == "Fit (low→high)":
+        view = view.sort_values("fit_score", ascending=True)
+    else:
+        view = view.sort_values(["fit_score", "in_bucket"], ascending=False)
+    view = view.reset_index(drop=True)
     view["▲"] = view.apply(_priority, axis=1)
-    st.caption(f"Showing {len(view)} jobs.  🟢 ≥85 · 🔵 75-84 · 🟡 65-74 · ⚪ <65 · ▫️ unscored · ⭐ target company. "
-               "Add jobs you're pursuing from the **Tracker** tab.")
+    # date-wise PAGES (latest first by default)
+    total = len(view)
+    n_pages = max(1, (total + page_size - 1) // page_size)
+    page = 1
+    if n_pages > 1:
+        page = st.number_input(f"Page (1–{n_pages})", 1, n_pages, 1, 1, key=f"{key_prefix}_pg")
+    start = (int(page) - 1) * page_size
+    page_view = view.iloc[start:start + page_size]
+    st.caption(f"Showing {len(page_view)} of {total} jobs · page {int(page)}/{n_pages}.  "
+               "🟢 ≥85 · 🔵 75-84 · 🟡 65-74 · ⚪ <65 · ▫️ unscored · ⭐ target company. "
+               "Filters stack (AND); sorted newest→oldest by default. Track jobs from the Tracker tab.")
     cols = ["▲", "new", "title", "company", "category", "sector", "locations", "posted", "fetched",
             "source", "in_bucket", "fit", "url"]
     if category:
         cols.remove("category")
     cols = [c for c in cols if c in view.columns]
-    # height scales with row count (≈35px/row) capped at 1200 so the table FILLS the screen in
-    # fullscreen instead of stopping halfway; small result sets stay compact.
-    _tbl_h = min(max(len(view), 8) * 35 + 40, 1200)
+    _tbl_h = min(max(len(page_view), 8) * 35 + 40, 1200)
     st.dataframe(
-        view[cols], hide_index=True, width="stretch", height=_tbl_h,
+        page_view[cols], hide_index=True, width="stretch", height=_tbl_h,
         column_config={
             "▲": st.column_config.TextColumn("▲", width="small",
                                              help="Priority: 🟢≥85 🔵75+ 🟡65+ ⚪<65 ▫️unscored"),
@@ -312,10 +345,11 @@ def render_kanban(tracked, url, kp):
         st.rerun()
 
 
-(tab_overview, tab_jobs, tab_source, tab_pipeline, tab_coverage, tab_bucket, tab_board,
- tab_apps, tab_cvs) = st.tabs(
-    ["📊 Overview", "💼 Jobs", "🗂️ By Source", "⚙️ Runs & LLMs", "🔎 Search Coverage",
-     "🏢 Bucket List", "📌 Shortlist", "✅ My Applications", "📝 Recommendations"])
+(tab_overview, tab_jobs, tab_intl, tab_source, tab_pipeline, tab_coverage, tab_bucket, tab_board,
+ tab_apps, tab_apply, tab_autoapply, tab_cvs) = st.tabs(
+    ["📊 Overview", "💼 Jobs", "🌍 International", "🗂️ By Source", "⚙️ Runs & LLMs", "🔎 Search Coverage",
+     "🏢 Bucket List", "📌 Shortlist", "✅ My Applications", "🚀 Apply Queue", "🤖 Auto-Apply",
+     "📝 Recommendations"])
 
 # ---------------------------------------------------------------- OVERVIEW
 with tab_overview:
@@ -1032,4 +1066,298 @@ with tab_apps:
             st.caption("Applications per day (last ~4 months). Darker = more applications that day.")
             recent = dfc[dfc["date"] >= today - pd.Timedelta(days=60)].set_index("date")["count"]
             st.bar_chart(recent, height=200)
+
+
+# --------------------------------------------------------------- INTERNATIONAL (visa sponsors only)
+with tab_intl:
+    st.subheader("🌍 International — visa-sponsoring roles only")
+    st.caption("Non-UK roles that explicitly offer, or are LIKELY to offer, visa sponsorship (strict "
+               "rule — everything else is dropped at ingest). Priority: 🇪🇺 EU first, then rest of world.")
+    _EUP1 = {"Ireland", "Germany", "Netherlands", "Austria", "Denmark", "France", "Sweden", "Finland",
+             "Norway", "Switzerland", "Luxembourg", "Belgium"}
+    if jobs.empty:
+        st.info("No jobs yet.")
+    else:
+        ij = jobs[~jobs["is_custom"]].copy()
+        if "country" not in ij.columns:
+            ij["country"] = ""
+        ij["country"] = ij["country"].fillna("")
+        ij = ij[~ij["country"].isin(["United Kingdom", "Unknown", ""])]
+        if ij.empty:
+            st.info("No international sponsor roles stored yet. They appear once the pipeline runs with "
+                    "global search on — the strict filter keeps only sponsors, so this stays clean.")
+        else:
+            ij["tier"] = ij["country"].map(lambda c: "🇪🇺 EU (priority 1)"
+                                           if c in _EUP1 else "🌐 Rest of world (priority 2)")
+            for _c in ("visa_sponsorship", "geo_score"):
+                if _c not in ij.columns:
+                    ij[_c] = "" if _c == "visa_sponsorship" else 0
+            mc = st.columns(4)
+            mc[0].metric("Total (sponsors)", len(ij))
+            mc[1].metric("🇪🇺 EU (p1)", int(ij["tier"].str.startswith("🇪🇺").sum()))
+            mc[2].metric("🌐 Rest (p2)", int((~ij["tier"].str.startswith("🇪🇺")).sum()))
+            mc[3].metric("Countries", ij["country"].nunique())
+            cca, ccb = st.columns(2)
+            with cca:
+                st.caption("Jobs by country")
+                st.bar_chart(ij["country"].value_counts(), height=280)
+            with ccb:
+                st.caption("Sponsor signal")
+                st.bar_chart(ij["visa_sponsorship"].replace("", "unknown").value_counts(), height=280)
+            f1, f2 = st.columns(2)
+            _tier_pick = f1.multiselect("Priority", sorted(ij["tier"].unique()), key="intl_tier")
+            _ctry_pick = f2.multiselect("Country", sorted(ij["country"].unique()), key="intl_ctry")
+            v = ij
+            if _tier_pick:
+                v = v[v["tier"].isin(_tier_pick)]
+            if _ctry_pick:
+                v = v[v["country"].isin(_ctry_pick)]
+            v = v.sort_values(["tier", "geo_score", "fit_score"], ascending=[True, False, False])
+            cols = [c for c in ["country", "title", "company", "category", "visa_sponsorship", "fit",
+                                "locations", "source", "posted", "url"] if c in v.columns]
+            st.caption(f"{len(v)} international sponsor roles (EU first).")
+            st.dataframe(v[cols], hide_index=True, width="stretch",
+                         height=min(max(len(v), 8) * 35 + 40, 1100),
+                         column_config={"url": st.column_config.LinkColumn("link", display_text="open"),
+                                        "visa_sponsorship": st.column_config.TextColumn("visa"),
+                                        "fit": st.column_config.NumberColumn("fit", format="%d")})
+
+
+# --------------------------------------------------------------- APPLY QUEUE (Phase 1)
+with tab_apply:
+    import datetime as _dtq
+
+    from uk_jobops.cv_match import CV_FILES, CV_LABEL
+
+    def _rerun_q():
+        try:
+            st.rerun()
+        except Exception:
+            st.experimental_rerun()
+
+    _acfg = cfg.settings.get("apply", {})
+    _athr = int(_acfg.get("threshold", 95))
+    st.subheader(f"🚀 Apply Queue — direct-employer roles scored ≥ {_athr}")
+    st.caption("High-fit roles on company ATS sites (Greenhouse/Lever/Ashby/Workday/… — never Indeed/"
+               "LinkedIn). Each shows the best-fit CV to attach and a ready answer sheet. Mark applied "
+               "when done (it logs to My Applications).")
+    try:
+        queue = get_store(url).apply_queue(min_score=_athr, limit=100)
+    except Exception as exc:
+        queue = []
+        st.error(f"Could not load the queue: {str(exc)[:160]}")
+
+    # answer sheet from the base CV / profile (constant across applications)
+    _cv = cfg.base_cv
+    _ct = _cv.get("contact", {})
+    _answers = {
+        "Full name": _cv.get("name", "Manoj Ram Mopati"),
+        "Email": _ct.get("email", ""), "Phone": _ct.get("phone", ""),
+        "Location": _ct.get("location", "London, UK"), "LinkedIn": _ct.get("linkedin", ""),
+        "GitHub": _ct.get("github", ""), "Portfolio": _ct.get("portfolio", ""),
+        "Right to work": "Yes — UK Graduate visa (can work now, no sponsorship needed in the UK)",
+        "Require visa sponsorship (UK)": "No",
+        "Years of experience": "4+", "Notice period": "Immediate / 1 week",
+        "Willing to relocate": "Yes (UK; internationally with sponsorship)",
+    }
+
+    if not queue:
+        st.info("Nothing in the queue yet. Jobs appear here once the pipeline scores a direct-ATS role "
+                f"at ≥ {_athr}. Lower `apply.threshold` in settings to widen it.")
+    else:
+        st.success(f"{len(queue)} role(s) ready to apply.")
+        st.markdown("**Standard answer sheet** (same for every application — copy fields as needed):")
+        st.dataframe(pd.DataFrame([{"field": k, "value": v} for k, v in _answers.items()]),
+                     hide_index=True, width="stretch", height=min(len(_answers) * 35 + 40, 500))
+        st.divider()
+        for a in queue:
+            key = a.get("matched_cv") or ""
+            cv_file = CV_FILES.get(key, "")
+            cv_label = CV_LABEL.get(key, key or "—")
+            fit = int(a.get("fit_score") or 0)
+            with st.expander(f"🟢 {fit} · {a.get('title','')} — {a.get('company','')}  ·  CV: {cv_label}",
+                             expanded=False):
+                meta = " · ".join(x for x in [a.get("country", ""), a.get("location", ""),
+                                              a.get("category", ""), a.get("visa_sponsorship", "")] if x)
+                if meta:
+                    st.caption(meta)
+                c1, c2, c3 = st.columns([2, 2, 2])
+                if a.get("url"):
+                    c1.markdown(f"### [→ Open & apply]({a['url']})")
+                # download the matched CV to attach
+                try:
+                    _p = cfg.path(f"{_acfg.get('cv_dir','data/cvs')}/{cv_file}")
+                    if cv_file and _p.exists():
+                        c2.download_button(f"📎 {cv_label} CV", _p.read_bytes(), file_name=cv_file,
+                                           mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                           key=f"cv_{a['dedupe_key']}")
+                    else:
+                        c2.caption(f"CV file missing: {cv_file}")
+                except Exception as exc:
+                    c2.caption(f"CV load error: {str(exc)[:60]}")
+                if c3.button("✅ Mark applied", key=f"ap_{a['dedupe_key']}"):
+                    try:
+                        get_tracker(url).add(company=a.get("company", ""), role_title=a.get("title", ""),
+                                             country=a.get("country", "United Kingdom"),
+                                             source_url=a.get("url", ""), status="applied",
+                                             applied_date=_dtq.date.today(),
+                                             notes=f"CV: {cv_label}")
+                        get_store(url).set_status(a["dedupe_key"], "applied")
+                        st.success("Logged to My Applications.")
+                        _rerun_q()
+                    except Exception as exc:
+                        st.error(f"Could not mark applied: {str(exc)[:120]}")
+                if a.get("description"):
+                    with st.popover("🎯 ATS keywords") if hasattr(st, "popover") else st.expander("🎯 ATS keywords"):
+                        from uk_jobops.keywords import candidate_skills, extract_keywords
+                        _kw = extract_keywords(a.get("description", ""), candidate_skills(cfg.profile, cfg.base_cv))
+                        st.markdown(_kw.to_line() or "_no keywords_")
+
+    # ---- Apply Activity: every auto-apply, with its confirmation screenshot ----
+    st.divider()
+    st.subheader("📸 Apply Activity")
+    st.caption("Every application the agent submitted, with the confirmation screenshot (also sent to "
+               "Telegram at the time). Written by scripts/auto_apply.py.")
+    try:
+        log = get_store(url).apply_log_rows(limit=200)
+    except Exception as exc:
+        log = []
+        st.caption(f"(activity log unavailable: {str(exc)[:100]})")
+    if not log:
+        st.info("No applications logged yet. Run `python scripts/auto_apply.py` on your Mac; each "
+                "submitted application is recorded here with its screenshot.")
+    else:
+        st.metric("Applications submitted", len(log))
+        for r in log[:60]:
+            when = str(r.get("applied_at") or "")[:16].replace("T", " ")
+            with st.expander(f"✅ {r.get('company','')} — {r.get('role_title','')}  ·  {when}  ·  CV: {r.get('cv','')}"):
+                if r.get("url"):
+                    st.markdown(f"[open job posting]({r['url']})")
+                if r.get("has_shot"):
+                    try:
+                        img = get_store(url).apply_screenshot(int(r["id"]))
+                        if img:
+                            st.image(img, caption="confirmation screenshot", use_container_width=True)
+                    except Exception:
+                        st.caption("(screenshot could not be loaded)")
+
+
+# ---------------------------------------------------------------- AUTO-APPLY (control panel)
+with tab_autoapply:
+    import re as _re_aa
+
+    def _rerun_aa():
+        try:
+            st.rerun()
+        except Exception:
+            st.experimental_rerun()
+
+    st.subheader("🤖 Auto-Apply — queue jobs to auto-fill on your laptop")
+    st.caption("Pick scored jobs or paste any application URL, choose whether to auto-submit, and press "
+               "**Queue**. Then on your laptop run the applier — it fills each form with your full profile "
+               "in a browser you can watch (and where you solve any CAPTCHA). Works from phone or laptop.")
+
+    _aacfg = cfg.settings.get("apply", {})
+    _aathr_default = int(_aacfg.get("threshold", 85))
+    try:
+        _store_aa = get_store(url)
+    except Exception as _e:
+        _store_aa = None
+        st.error(f"Database not reachable: {str(_e)[:160]}")
+
+    if _store_aa is not None:
+        # ---- 1) threshold + pick from scored queue -------------------------------------------
+        thr_aa = st.slider("Minimum fit score to show", 0, 100, _aathr_default, 5, key="aa_thr")
+        try:
+            scored = _store_aa.apply_queue(min_score=thr_aa, limit=100)
+        except Exception as _e:
+            scored = []
+            st.warning(f"Couldn't load scored queue: {str(_e)[:140]}")
+        opt_map = {}
+        for r in scored:
+            lbl = f"{int(r.get('fit_score') or 0):>3} · {(r.get('title') or '')[:44]} — {(r.get('company') or '')[:22]}"
+            opt_map[lbl] = r
+        picked = st.multiselect(
+            f"Scored direct-ATS roles ≥ {thr_aa}  ({len(scored)} available)",
+            list(opt_map.keys()), key="aa_pick",
+            help="These are high-fit jobs on real company ATS sites (Greenhouse/Lever/Ashby/Workday…).")
+
+        # ---- 2) paste any URLs ---------------------------------------------------------------
+        pasted_raw = st.text_area(
+            "…or paste application URLs (one per line)", height=110, key="aa_paste",
+            placeholder="https://jobs.lever.co/acme/....\nhttps://boards.greenhouse.io/acme/jobs/....")
+        pasted_urls = [u.strip() for u in (pasted_raw or "").splitlines()
+                       if u.strip().lower().startswith("http")]
+
+        # ---- 3) one submit setting for this batch --------------------------------------------
+        auto_submit_batch = st.toggle(
+            "Auto-submit after filling (off = fill and pause for my review)", value=False, key="aa_submit",
+            help="OFF is safest to start: the applier fills everything and waits so you can check and submit "
+                 "yourself. Turn ON once you trust it.")
+
+        n_sel = len(picked) + len(pasted_urls)
+        st.markdown(f"**{n_sel}** URL(s) selected · submit = **{'AUTO' if auto_submit_batch else 'review first'}**")
+
+        cta1, cta2 = st.columns([2, 1])
+        if cta1.button("➕ Queue these for applying", type="primary", use_container_width=True,
+                       disabled=(n_sel == 0), key="aa_queue_btn"):
+            items = []
+            for lbl in picked:
+                r = opt_map[lbl]
+                items.append({"url": r.get("url", ""), "title": r.get("title", ""),
+                              "company": r.get("company", ""), "source": "queue",
+                              "auto_submit": auto_submit_batch})
+            for u in pasted_urls:
+                items.append({"url": u, "title": "", "company": "", "source": "pasted",
+                              "auto_submit": auto_submit_batch})
+            try:
+                added = _store_aa.add_apply_requests(items)
+                st.success(f"Queued {added} URL(s). Now run the applier on your laptop (command below).")
+                _rerun_aa()
+            except Exception as _e:
+                st.error(f"Could not queue: {str(_e)[:160]}")
+        if cta2.button("🧹 Clear finished", use_container_width=True, key="aa_clear_done"):
+            try:
+                _store_aa.clear_apply_requests("done"); _rerun_aa()
+            except Exception:
+                pass
+
+        # ---- 4) the run command --------------------------------------------------------------
+        st.divider()
+        st.markdown("**On your laptop, run this to apply to the queue:**")
+        st.code("python scripts/auto_apply.py --from-queue", language="bash")
+        st.caption("Runs a visible browser so you can watch it fill, solve any CAPTCHA, and (if you left "
+                   "auto-submit off) submit each one yourself. It picks the right CV per job automatically. "
+                   "Add `--headless` only for fully hands-off runs with auto-submit on.")
+
+        # ---- 5) live status of the queue -----------------------------------------------------
+        st.divider()
+        st.markdown("**Queue status**")
+        try:
+            rows = _store_aa.apply_requests_rows(limit=200)
+        except Exception:
+            rows = []
+        if not rows:
+            st.info("Nothing queued yet. Select or paste some URLs above and press Queue.")
+        else:
+            import pandas as _pd_aa
+            dfq = _pd_aa.DataFrame(rows)
+            _status_emoji = {"queued": "⏳ queued", "processing": "⚙️ processing", "done": "✅ done",
+                             "needs_submit": "📝 filled — submit", "skipped": "⏭️ skipped", "error": "❌ error"}
+            dfq["status"] = dfq["status"].map(lambda s: _status_emoji.get(s, s))
+            show = dfq[["status", "title", "company", "source", "auto_submit", "url", "note"]].rename(
+                columns={"auto_submit": "auto?"})
+            st.dataframe(show, use_container_width=True, hide_index=True,
+                         height=min(len(show) * 35 + 40, 480))
+            cc1, cc2 = st.columns(2)
+            if cc1.button("🗑️ Clear pending (queued)", use_container_width=True, key="aa_clear_pending"):
+                try:
+                    _store_aa.clear_apply_requests("queued"); _rerun_aa()
+                except Exception:
+                    pass
+            if cc2.button("🧨 Clear ALL", use_container_width=True, key="aa_clear_all"):
+                try:
+                    _store_aa.clear_apply_requests("all"); _rerun_aa()
+                except Exception:
+                    pass
 
