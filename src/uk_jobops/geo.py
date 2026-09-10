@@ -101,7 +101,22 @@ _SPONSOR = re.compile(
     r"(visa sponsorship|will sponsor|can sponsor|sponsorship (is )?(available|offered|provided)|"
     r"we sponsor|offer sponsorship|skilled worker visa|tier 2 (visa|sponsor)|certificate of sponsorship|"
     r"\bblue card\b|work permit (provided|support|assistance)|relocation (package|support|assistance|"
-    r"provided|offered)|willing to sponsor|sponsor(ship)? for the right candidate|global mobility)", re.I)
+    r"provided|offered)|willing to sponsor|sponsor(ship)? for the right candidate|global mobility|"
+    # widened: the schemes employers actually name in EU/global postings
+    r"highly skilled migrant|kennismigrant|critical skills( employment)? permit|employment pass|"
+    r"work(ing)? (visa|permit) (sponsor|support|provided)|visa support|we support relocation|"
+    r"relocation assistance|international candidates (are )?welcome|open to international|"
+    r"express entry|lmia|subclass 482|sponsor(ed|ship)? work permit|immigration support)", re.I)
+
+# Countries whose tech/data market routinely hires internationally via a well-known skilled-migration
+# route (NL highly-skilled migrant, DE/EU Blue Card, IE critical skills, CA express entry, AU/NZ skilled,
+# SG employment pass, UAE work permit). A role in one of these is a REALISTIC sponsorship target even
+# when the (usually truncated) advert text never mentions a visa — so treat it as 'likely', not 'unknown'.
+_SPONSOR_FRIENDLY_COUNTRIES = {
+    "Netherlands", "Germany", "Ireland", "Austria", "Belgium", "Luxembourg", "Denmark", "Sweden",
+    "Finland", "Norway", "Switzerland", "France", "Poland", "Spain", "Portugal", "Czechia",
+    "Canada", "Australia", "New Zealand", "Singapore", "UAE", "United Arab Emirates", "Japan",
+}
 _REFUSE = re.compile(
     r"(no (visa )?sponsorship|not able to sponsor|unable to sponsor|cannot sponsor|do(es)? not (offer|"
     r"provide) sponsorship|without sponsorship|must (already )?(have|hold) (the )?(right to work|work "
@@ -126,8 +141,13 @@ _LIKELY_SPONSORS = {
 }
 
 
-def visa_signal(text: str, company: str = "") -> str:
-    """'sponsors' (explicit) > 'refused' (explicit no) > 'likely' (known sponsor) > 'unknown'."""
+def visa_signal(text: str, company: str = "", country: str = "") -> str:
+    """'sponsors' (explicit) > 'refused' (explicit no) > 'likely' (known sponsor employer, OR a country
+    with a standard skilled-migration route) > 'unknown'.
+
+    `country` matters because most adverts we ingest are SNIPPETS (SERP/Adzuna), so the visa wording is
+    usually absent — judging on text alone marked almost everything 'unknown' and the strict ingest gate
+    then deleted every international job. Country context makes the signal realistic."""
     t = text or ""
     if _SPONSOR.search(t):
         return "sponsors"
@@ -135,6 +155,8 @@ def visa_signal(text: str, company: str = "") -> str:
         return "refused"
     c = re.sub(r"[^a-z0-9 &.]", "", (company or "").lower())
     if any(s in c for s in _LIKELY_SPONSORS):
+        return "likely"
+    if (country or "").strip() in _SPONSOR_FRIENDLY_COUNTRIES:
         return "likely"
     return "unknown"
 

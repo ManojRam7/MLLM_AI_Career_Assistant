@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os as _os
 import pathlib
 import sys
 import time
@@ -391,8 +392,21 @@ def main() -> None:
     ap.add_argument("--title", default="", help="role title for --url (helps pick the right CV)")
     ap.add_argument("--cv", default="", help="force a CV key for --url (e.g. ai-engineer, ds-azure)")
     ap.add_argument("--from-queue", dest="from_queue", action="store_true",
-                    help="apply to the URLs you queued from the Streamlit Auto-Apply panel (apply_requests)")
+                    help="apply to the URLs you queued from the Auto-Apply panel (apply_requests)")
+    ap.add_argument("--ci", action="store_true",
+                    help="cloud/unattended mode: never wait for keyboard input; CAPTCHA-blocked forms are "
+                         "flagged 'needs_manual' instead of pausing")
     args = ap.parse_args()
+
+    # Unattended when --ci, when running in CI (GitHub Actions sets CI=true), or with no terminal.
+    interactive = not (args.ci or _os.environ.get("CI") == "true" or not sys.stdin.isatty())
+
+    def pause(msg: str) -> None:
+        """Wait for the user ONLY when a human is actually there; otherwise just log and continue."""
+        if interactive:
+            input(msg)
+        else:
+            print(f"      (unattended: {msg.strip()[:90]})")
 
     cfg = load_config()
     acfg = cfg.settings.get("apply", {})
@@ -484,6 +498,7 @@ def main() -> None:
             page = ctx.new_page()
             submitted = False
             filled = 0
+            blocked = False
             try:
                 open_form(page, job.get("url"))
                 # for a PASTED URL (no title), read the page to auto-detect the role and pick the right CV
@@ -531,26 +546,29 @@ def main() -> None:
                     print("    ⚠️ 'Current location' didn't auto-select (geocode dropdown slow/empty). "
                           "Type your city in the box and PICK it from the dropdown.")
                     if do_submit and not args.headless:
-                        input("       Do that in the open browser, then press Enter to continue... ")
+                        pause("       Do that in the open browser, then press Enter to continue... ")
                 time.sleep(1)
                 # CAPTCHA: I do NOT solve these (it defeats the site's bot protection). If one is
                 # present, pause so YOU can solve it in the visible browser, then continue.
-                if _has_captcha(page):
+                # CAPTCHA: never auto-solved. Unattended → flag it for you and DON'T submit.
+                blocked = _has_captcha(page)
+                if blocked:
                     print("    🔒 CAPTCHA / bot-check detected on this form.")
-                    if args.headless:
-                        print("       Running headless — rerun WITHOUT --headless so you can solve it.")
+                    if interactive and not args.headless:
+                        pause("       Please solve the CAPTCHA in the open browser window, then press Enter... ")
+                        blocked = _has_captcha(page)
                     else:
-                        input("       Please solve the CAPTCHA in the open browser window, then press Enter... ")
-                if do_submit:
+                        print("       Unattended run — leaving this one for you to finish manually.")
+                if do_submit and not blocked:
                     submitted = submit_form(page)
-                    print("    " + ("🚀 submitted." if submitted else "! submit button not found — do it manually."))
+                    print("    " + ("🚀 submitted." if submitted else "! submit button not found."))
                     time.sleep(3)
-                else:
-                    input("    Review, then press Enter to record it (submit yourself first if you want)... ")
+                elif not do_submit:
+                    pause("    Review, then press Enter to record it (submit yourself first if you want)... ")
             except Exception as exc:
-                print(f"    ! error: {str(exc)[:120]} — complete it manually in the open tab.")
+                print(f"    ! error: {str(exc)[:120]}")
                 if not do_submit:
-                    input("    Press Enter when done... ")
+                    pause("    Press Enter when done... ")
             shot = str(shot_dir / f"{(job.get('company') or 'co').replace('/', '_')}_{int(time.time())}.png")
             img = None
             try:
@@ -561,7 +579,12 @@ def main() -> None:
             if all(tg) and img:
                 ok, det = notify.send_photo(tg[0], tg[1], shot, cap)
                 print(f"    telegram: {'sent' if ok else det}")
-            outcome = "submitted" if (submitted or not do_submit) else "needs_submit"
+            if blocked:
+                outcome = "needs_manual"          # CAPTCHA — you finish this one; never auto-solved
+            elif submitted or not do_submit:
+                outcome = "submitted"
+            else:
+                outcome = "needs_submit"
             # log every REAL application (a scored queued job OR a from-queue URL); skip only --url tests
             if job.get("dedupe_key") or req_id:
                 try:
@@ -579,8 +602,8 @@ def main() -> None:
                 print("    (test mode — not logged to DB/tracker)")
             if req_id:                        # mark the Streamlit-queued request done/needs-submit
                 try:
-                    store.set_apply_request_status(req_id, "done" if outcome == "submitted" else "needs_submit",
-                                                   f"CV {label} · filled {filled} fields")
+                    _rs = {"submitted": "done", "needs_manual": "needs_manual"}.get(outcome, "needs_submit")
+                    store.set_apply_request_status(req_id, _rs, f"CV {label} · filled {filled} fields")
                 except Exception:
                     pass
             try:

@@ -1,0 +1,84 @@
+name: Auto-Apply (cloud)
+
+# FULLY ONLINE APPLY RUNNER.
+# Trigger it from the web app (button) or the Actions tab — nothing runs on your laptop.
+# It reads the URLs you queued (apply_requests in Supabase), fills each application form with
+# Playwright on GitHub's servers, stores a screenshot + status back in Supabase, and pings Telegram.
+#
+# CAPTCHA policy: never auto-solved. A form showing a CAPTCHA is marked 'needs_manual' and left
+# for you to finish — the run continues with the rest.
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max applications to process this run"
+        required: false
+        default: "10"
+      min_score:
+        description: "Minimum fit score (only used when source = scored-queue)"
+        required: false
+        default: "85"
+      submit:
+        description: "Actually click Submit? (false = fill only, you review in the app)"
+        type: boolean
+        required: false
+        default: false
+      source:
+        description: "Which URLs to apply to"
+        type: choice
+        options: ["queued-urls", "scored-queue"]
+        default: "queued-urls"
+  # Scheduling is intentionally OFF until you trust the engine. To enable, uncomment:
+  # schedule:
+  #   - cron: "0 8 * * 1-5"   # 08:00 UTC, weekdays
+
+concurrency:
+  group: auto-apply           # never run two appliers at once (avoids double-submitting)
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Apply
+        env:
+          CI: "true"
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAPI_KEY: ${{ secrets.OPENAPI_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          FLAGS="--ci --headless --limit ${{ inputs.limit }}"
+          if [ "${{ inputs.source }}" = "queued-urls" ]; then FLAGS="$FLAGS --from-queue"; fi
+          if [ "${{ inputs.source }}" = "scored-queue" ]; then FLAGS="$FLAGS --min-score ${{ inputs.min_score }}"; fi
+          if [ "${{ inputs.submit }}" = "true" ]; then FLAGS="$FLAGS --submit"; fi
+          echo "Running: python scripts/auto_apply.py $FLAGS"
+          python scripts/auto_apply.py $FLAGS
+
+      - name: Upload screenshots (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apply-screenshots
+          path: output/apply_shots/
+          if-no-files-found: ignore
+          retention-days: 14

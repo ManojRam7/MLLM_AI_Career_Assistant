@@ -47,8 +47,16 @@ search:
   require_bucket: false           # strict: keep ONLY jobs from your 750 target companies (max focus)
   global_search: true            # v2 GLOBAL: keep non-UK roles and RANK by geo_score (UK>EU>world +
                                  # visa sponsorship) instead of hard-dropping them. false = UK-only.
-  intl_visa_strict: true         # STRICT: keep a NON-UK role ONLY if it offers or is likely to offer
-                                 # visa sponsorship. UK roles always kept. (International = sponsors only.)
+  intl_visa_mode: "all"          # INTERNATIONAL GATE (replaces intl_visa_strict):
+                                 #   "all"    keep every non-UK role EXCEPT ones that explicitly say
+                                 #            "no sponsorship" — ranking still puts sponsors first.
+                                 #   "likely" only sponsors + likely sponsors (known sponsor employer,
+                                 #            or a country with a standard skilled-migration route).
+                                 #   "strict" only roles that explicitly advertise sponsorship.
+                                 # NOTE: "strict" previously deleted ~every international job at ingest,
+                                 # because snippet adverts rarely mention a visa — which left the
+                                 # International section permanently empty. "all" is the sane default.
+  intl_visa_strict: false        # legacy flag, kept for back-compat (only used if intl_visa_mode unset)
 
 seniority:
   include:                       # role must match one of these (on the TITLE); covers BOTH categories

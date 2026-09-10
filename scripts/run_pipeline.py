@@ -56,9 +56,32 @@ def main() -> None:
                     help="one-time: delete non-tracked Bright Data jobs before the run (clears old spam)")
     ap.add_argument("--wipe-all", action="store_true",
                     help="DESTRUCTIVE one-time: delete ALL jobs + run history, then rebuild clean")
+    ap.add_argument("--sources", default=None,
+                    help="run ONLY these sources this run, comma-separated: reed,adzuna,ats,brightdata,"
+                         "linkedin,indeed  (lets you schedule each source on its own cadence)")
+    ap.add_argument("--min-fit", dest="min_fit", type=int, default=None,
+                    help="override the alert fit-score threshold for this run (per-source thresholds)")
     args = ap.parse_args()
     try:
         cfg = load_config()
+        # ---- per-source run: disable every source not named in --sources -------------------------
+        if args.sources:
+            wanted = {s.strip().lower() for s in args.sources.split(",") if s.strip()}
+            known = {"reed", "adzuna", "ats", "brightdata", "linkedin", "indeed", "apify_linkedin"}
+            unknown = wanted - known
+            if unknown:
+                print(f"[sources] ignoring unknown: {', '.join(sorted(unknown))}", file=sys.stderr)
+            src_cfg = cfg.settings.setdefault("sources", {})
+            for name in known:
+                if name in src_cfg and isinstance(src_cfg[name], dict):
+                    src_cfg[name]["enabled"] = name in wanted
+            print(f"[sources] this run: {', '.join(sorted(wanted & known)) or 'none'}", file=sys.stderr)
+        # ---- per-source fit threshold ------------------------------------------------------------
+        if args.min_fit is not None:
+            nf = cfg.settings.setdefault("notify", {})
+            nf["min_fit"] = args.min_fit
+            nf["min_fit_floor"] = args.min_fit
+            print(f"[min-fit] alert threshold for this run: {args.min_fit}", file=sys.stderr)
         if args.wipe_all and cfg.secrets.supabase_db_url:
             from uk_jobops.db import Store
             _s = Store(cfg.secrets.supabase_db_url)

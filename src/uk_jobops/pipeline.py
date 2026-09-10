@@ -187,19 +187,30 @@ class Pipeline:
             targets = [j for j in targets
                        if not nonuk_country(f"{j.location or ''} {j.locations or ''} {j.title or ''}")]
             _nonuk_dropped = _b4 - len(targets)
-        elif search.get("intl_visa_strict", True):
-            # STRICT INTERNATIONAL RULE: keep UK roles always; keep a NON-UK role ONLY if it offers or
-            # is likely to offer visa sponsorship (he needs sponsorship abroad). Drop the rest at ingest,
-            # so the International section only ever contains visa-providing opportunities.
-            from .geo import visa_signal
+        else:
+            # INTERNATIONAL GATE. `search.intl_visa_mode`:
+            #   "all"    (default) keep every non-UK role EXCEPT ones that explicitly refuse sponsorship
+            #   "likely" keep only sponsors / likely sponsors (known sponsor employer or sponsor-friendly country)
+            #   "strict" keep only roles that EXPLICITLY advertise sponsorship
+            # Ranking still prefers UK > EU > world and sponsors > likely > unknown (geo_score), so nothing
+            # is lost by keeping them — but deleting at ingest made the International section permanently
+            # empty, because snippet-length adverts almost never mention a visa.
+            from .geo import detect_country as _dc, visa_signal
+            mode = str(search.get("intl_visa_mode",
+                                  "likely" if search.get("intl_visa_strict") else "all")).lower()
+            keep_for = {"all": {"sponsors", "likely", "unknown"},
+                        "likely": {"sponsors", "likely"},
+                        "strict": {"sponsors"}}.get(mode, {"sponsors", "likely", "unknown"})
             _b4 = len(targets)
             _kept = []
             for j in targets:
                 blob = f"{j.location or ''} {j.locations or ''} {j.title or ''}"
                 if not nonuk_country(blob):
                     _kept.append(j)                                                   # UK / unknown -> keep
-                elif visa_signal(j.description or "", j.company or "") in ("sponsors", "likely"):
-                    _kept.append(j)                                                   # non-UK + sponsor -> keep
+                    continue
+                _ctry = _dc(f"{blob} {(j.description or '')[:400]}")
+                if visa_signal(j.description or "", j.company or "", _ctry) in keep_for:
+                    _kept.append(j)
             _intl_dropped = _b4 - len(_kept)
             targets = _kept
         # EXPIRY gate: drop jobs whose posted date is older than the max age (keeps look-back to RECENT
@@ -319,7 +330,7 @@ class Pipeline:
             _loc_blob = (f"{_j.get('location') or ''} {_j.get('locations') or ''} "
                          f"{_j.get('title') or ''} {(_j.get('description') or '')[:600]}")
             _country = detect_country(_loc_blob, default="")
-            _visa = visa_signal(_j.get("description") or "", _j.get("company") or "")
+            _visa = visa_signal(_j.get("description") or "", _j.get("company") or "", _country)
             _kw = extract_keywords(_j.get("description") or "", _cand)
             _cv = match_cv_key(_j.get("title") or "", _j.get("description") or "")   # best-fit CV
             store.update(_j["dedupe_key"], cv_keywords=_kw.to_line(),
