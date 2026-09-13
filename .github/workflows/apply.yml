@@ -59,6 +59,9 @@ jobs:
       - name: Apply
         env:
           CI: "true"
+          # With STEEL_API_KEY set, the browser runs in Steel's cloud and the run prints a LIVE
+          # viewer URL (also shown in the app) so you can watch it from your phone.
+          STEEL_API_KEY: ${{ secrets.STEEL_API_KEY }}
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAPI_KEY: ${{ secrets.OPENAPI_KEY }}

@@ -1544,6 +1544,14 @@ with tab_autoapply:
                 evs = []
             done = any(e["kind"] == "run_end" for e in evs)
             st.markdown(("✅ **Finished**" if done else "🔴 **Running…**") + f" · {len(evs)} events")
+            # LIVE BROWSER: Steel gives a viewer URL — embed it so you literally watch the form fill
+            _live = next((e.get("answer") for e in evs if e.get("kind") == "live_view"), "")
+            if _live:
+                st.link_button("📺 Watch the browser live", _live, width="stretch")
+                with st.expander("Show the live browser here", expanded=not done):
+                    st.components.v1.iframe(_live, height=620, scrolling=True)
+                    st.caption("If it doesn't load embedded, use the button above — some browsers block "
+                               "third-party iframes.")
             cur_job = None
             for e in evs:
                 k = e["kind"]
