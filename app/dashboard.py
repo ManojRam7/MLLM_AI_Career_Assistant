@@ -1445,6 +1445,21 @@ with tab_autoapply:
         run_limit = st.number_input("How many applications this run", 1, 50, min(10, max(1, n_queued or 10)),
                                     key="aa_run_limit")
         st.caption(f"{n_queued} URL(s) currently waiting in the queue.")
+        # Did the LAST run actually get a Steel live browser? Tells you if the GitHub secret is set.
+        try:
+            _last = _store_aa.apply_event_runs(limit=1)
+            _had_live = False
+            if _last:
+                _had_live = any(e.get("kind") == "live_view"
+                                for e in _store_aa.apply_events(_last[0]["run_id"]))
+            if _last and _had_live:
+                st.success("📺 Live browser **enabled** — your last run streamed a Steel session.")
+            elif _last:
+                st.warning("📺 Live browser **not active** on the last run. Add `STEEL_API_KEY` to the "
+                           "**GitHub repo** secrets (Settings → Secrets and variables → Actions) — the "
+                           "Streamlit secret isn't visible to the workflow.")
+        except Exception:
+            pass
         if not _tok:
             st.warning("To run in the cloud, add a GitHub token so this page can start the workflow.")
             with st.expander("How to set it up (2 minutes)"):
@@ -1463,9 +1478,40 @@ with tab_autoapply:
                     "limit": int(run_limit), "source": "queued-urls",
                     "submit": bool(auto_submit_batch), "min_score": int(thr_aa)})
                 if ok:
-                    st.success("Started. It's applying on GitHub's servers now — you can close this page.")
-                    st.link_button("📺 Watch the run", msg, width="stretch")
-                    st.caption("Statuses below update as each application finishes (hit Refresh).")
+                    st.success("Started in the cloud.")
+                    # Wait for the Steel LIVE viewer URL, then show it as the main thing (not GitHub).
+                    _live_now, _ph = "", st.empty()
+                    import time as _t2
+                    for _i in range(20):                      # up to ~60s (deps install first)
+                        try:
+                            for _r in _store_aa.apply_event_runs(limit=3):
+                                _e2 = _store_aa.apply_events(_r["run_id"])
+                                _lv = next((e.get("answer") for e in _e2
+                                            if e.get("kind") == "live_view"), "")
+                                if _lv:
+                                    _live_now = _lv
+                                    break
+                        except Exception:
+                            pass
+                        if _live_now:
+                            break
+                        _ph.caption(f"⏳ Starting the live browser… {(_i + 1) * 3}s "
+                                    "(installing dependencies on the runner)")
+                        _t2.sleep(3)
+                    _ph.empty()
+                    if _live_now:
+                        st.markdown("### 📺 Watch it live")
+                        st.link_button("Open the live browser (full screen)", _live_now, width="stretch")
+                        st.components.v1.iframe(_live_now, height=620, scrolling=True)
+                    else:
+                        st.warning(
+                            "No live browser session appeared. Almost always this means **STEEL_API_KEY "
+                            "is missing from your GitHub repo secrets** — a Streamlit secret is NOT "
+                            "visible to the workflow. Add it at: repo → Settings → Secrets and variables "
+                            "→ Actions → New repository secret → name `STEEL_API_KEY`. "
+                            "Then run again. (The run still applies — just headless, with screenshots.)")
+                    st.link_button("📄 GitHub run log (text output)", msg, width="stretch")
+                    st.caption("The 🔴 Live run panel below streams every answer as it's filled.")
                 elif "401" in msg or "Bad credentials" in msg:
                     st.error("**GitHub rejected the token (401 Bad credentials).** The token is invalid, "
                              "expired, or was only partly pasted — it's not a permissions problem. "
