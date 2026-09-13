@@ -39,6 +39,15 @@ def get_db_url() -> str:
 
 
 @st.cache_resource(show_spinner=False)
+
+def _iframe(src, height=620, scrolling=True):
+    """Embed a URL. Uses st.iframe (current API); falls back on older Streamlit versions."""
+    try:
+        return st.iframe(src, height=height, scrolling=scrolling)
+    except Exception:
+        import streamlit.components.v1 as _c
+        return _c.iframe(src, height=height, scrolling=scrolling)
+
 def get_store(url: str) -> Store:
     s = Store(url)
     s.init_schema()
@@ -1501,8 +1510,11 @@ with tab_autoapply:
                     _ph.empty()
                     if _live_now:
                         st.markdown("### 📺 Watch it live")
+                        st.caption("You can **click straight into the browser below and take over** — "
+                                   "handy for solving a CAPTCHA or picking the location from its dropdown. "
+                                   "Whatever you do affects the real session.")
                         st.link_button("Open the live browser (full screen)", _live_now, width="stretch")
-                        st.components.v1.iframe(_live_now, height=620, scrolling=True)
+                        _iframe(_live_now, height=620, scrolling=True)
                     else:
                         st.warning(
                             "No live browser session appeared. Almost always this means **STEEL_API_KEY "
@@ -1595,7 +1607,7 @@ with tab_autoapply:
             if _live:
                 st.link_button("📺 Watch the browser live", _live, width="stretch")
                 with st.expander("Show the live browser here", expanded=not done):
-                    st.components.v1.iframe(_live, height=620, scrolling=True)
+                    _iframe(_live, height=620, scrolling=True)
                     st.caption("If it doesn't load embedded, use the button above — some browsers block "
                                "third-party iframes.")
             cur_job = None

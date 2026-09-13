@@ -499,10 +499,26 @@ def main() -> None:
                 steel_client = Steel(steel_api_key=steel_key)
                 # NOTE: solve_captcha intentionally NOT enabled — CAPTCHAs are left for you.
                 steel_session = steel_client.sessions.create()
-                live_url = f"https://app.steel.dev/sessions/{steel_session.id}"
+                # The EMBEDDABLE, no-login viewer is the session's debug URL (app.steel.dev/sessions/…
+                # is the dashboard and requires a Steel login, so it can't be embedded).
+                live_url = getattr(steel_session, "debug_url", "") or ""
+                if not live_url:
+                    try:
+                        _dbg = steel_client.sessions.debug(steel_session.id)
+                        live_url = (getattr(_dbg, "debugger_fullscreen_url", "")
+                                    or getattr(_dbg, "debuggerFullscreenUrl", "")
+                                    or getattr(_dbg, "debugger_url", "") or "")
+                    except Exception:
+                        live_url = ""
+                if live_url:                       # interactive = you can take over mid-run
+                    sep = "&" if "?" in live_url else "?"
+                    live_url = f"{live_url}{sep}interactive=true&showControls=true"
+                dash_url = f"https://app.steel.dev/sessions/{steel_session.id}"
                 print("\n" + "=" * 68)
-                print(f"📺  WATCH IT LIVE:  {live_url}")
+                print(f"📺  WATCH IT LIVE:  {live_url or dash_url}")
+                print(f"    (dashboard/replay: {dash_url})")
                 print("=" * 68 + "\n")
+                live_url = live_url or dash_url
                 store.log_apply_event(run_id=RUN_ID, kind="live_view", field="Watch live",
                                       answer=live_url, origin="auto")
                 browser = p.chromium.connect_over_cdp(f"{steel_session.websocket_url}&apiKey={steel_key}")
