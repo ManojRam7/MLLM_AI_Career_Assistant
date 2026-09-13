@@ -74,11 +74,13 @@ jobs:
           echo "Running: python scripts/auto_apply.py $FLAGS"
           python scripts/auto_apply.py $FLAGS
 
-      - name: Upload screenshots (artifact)
+      - name: Upload screenshots + video (watch the run back)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: apply-screenshots
-          path: output/apply_shots/
+          name: apply-recording
+          path: |
+            output/apply_shots/
+            output/apply_videos/
           if-no-files-found: ignore
           retention-days: 14

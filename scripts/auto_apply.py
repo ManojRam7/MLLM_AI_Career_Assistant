@@ -25,7 +25,9 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
-_VERSION = "v6.1 (location: dropdown-select + fill-text fallback when no dropdown)"
+_VERSION = "v6.2 (cloud runs are watchable: step screenshots + video)"
+# Groups this run's step screenshots together (GitHub run id in the cloud, timestamp locally).
+RUN_ID = _os.environ.get("GITHUB_RUN_ID") or dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 from uk_jobops import notify  # noqa: E402
 from uk_jobops import applicant  # noqa: E402
@@ -480,7 +482,15 @@ def main() -> None:
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=args.headless)
-        ctx = browser.new_context(accept_downloads=True)
+        # Record video when unattended so a cloud run can be watched back exactly like a local one.
+        _vid_dir = pathlib.Path(cfg.path("output/apply_videos"))
+        _ctx_kw = {"accept_downloads": True, "viewport": {"width": 1440, "height": 1000}}
+        if not interactive:
+            _vid_dir.mkdir(parents=True, exist_ok=True)
+            _ctx_kw["record_video_dir"] = str(_vid_dir)
+            _ctx_kw["record_video_size"] = {"width": 1440, "height": 1000}
+            print(f"Recording video of this run -> {_vid_dir} (downloadable from the Actions artifact)")
+        ctx = browser.new_context(**_ctx_kw)
         for idx, job in enumerate(queue, 1):
             # recompute the CV from the live JD every time (never trust a stale/empty stored value —
             # e.g. a 'Data Analyst' role must get the Data Analyst CV, not the default ds-azure)
@@ -499,8 +509,25 @@ def main() -> None:
             submitted = False
             filled = 0
             blocked = False
+            _step = {"n": 0}
+
+            def snap(label: str, note: str = "") -> None:
+                """Screenshot this stage into the DB so a headless CLOUD run is watchable in the app."""
+                _step["n"] += 1
+                try:
+                    img = page.screenshot(full_page=True)
+                except Exception:
+                    return
+                try:
+                    store.log_apply_step(url=job.get("url", ""), company=job.get("company", ""),
+                                         role_title=job.get("title", ""), run_id=RUN_ID,
+                                         step_no=_step["n"], label=label, note=note, shot=img)
+                except Exception:
+                    pass
+
             try:
                 open_form(page, job.get("url"))
+                snap("1 · Application form opened")
                 # for a PASTED URL (no title), read the page to auto-detect the role and pick the right CV
                 if job.get("_needs_meta"):
                     mt, md = _page_job_meta(page)
@@ -538,6 +565,9 @@ def main() -> None:
                 print(f"    fields={len(fields)} · from profile={len(det)} · from AI={len(llm_ans)} · "
                       f"CV {'attached' if uploaded else 'NOT attached'}")
                 print(f"    ✓ filled {filled}/{len(fields)} fields.")
+                snap(f"2 · Filled {filled}/{len(fields)} fields",
+                     f"CV {label} {'attached' if uploaded else 'NOT attached'} · "
+                     f"profile={len(det)} AI={len(llm_ans)}")
                 if missed:
                     print("      could not set: " + "; ".join(missed[:8]))
                 # location depends on a live geocode dropdown; if it didn't commit, never submit empty
@@ -563,6 +593,9 @@ def main() -> None:
                     submitted = submit_form(page)
                     print("    " + ("🚀 submitted." if submitted else "! submit button not found."))
                     time.sleep(3)
+                    snap("3 · After submit", "submitted" if submitted else "submit button not found")
+                elif blocked:
+                    snap("3 · Blocked by CAPTCHA", "left for you to finish manually")
                 elif not do_submit:
                     pause("    Review, then press Enter to record it (submit yourself first if you want)... ")
             except Exception as exc:

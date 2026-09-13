@@ -583,7 +583,7 @@ with tab_source:
                 y=alt.Y("jobs:Q", title="jobs"),
                 color=alt.Color("source:N", title="source"),
                 tooltip=["day", "source", "jobs"]).properties(height=340))
-            st.altair_chart(chart, use_container_width=True)
+            st.altair_chart(chart, width="stretch")
             piv = (per.pivot(index="day", columns="source", values="jobs")
                    .fillna(0).astype(int).sort_index(ascending=False))
             st.caption("Date × source (newest first):")
@@ -1062,7 +1062,7 @@ with tab_apps:
                                 scale=alt.Scale(scheme="greens", domainMin=0), legend=alt.Legend(orient="right")),
                 tooltip=[alt.Tooltip("date:T", title="date"), alt.Tooltip("count:Q", title="applications")])
                 .properties(height=200))
-            st.altair_chart(heat, use_container_width=True)
+            st.altair_chart(heat, width="stretch")
             st.caption("Applications per day (last ~4 months). Darker = more applications that day.")
             recent = dfc[dfc["date"] >= today - pd.Timedelta(days=60)].set_index("date")["count"]
             st.bar_chart(recent, height=200)
@@ -1237,7 +1237,7 @@ with tab_apply:
                     try:
                         img = get_store(url).apply_screenshot(int(r["id"]))
                         if img:
-                            st.image(img, caption="confirmation screenshot", use_container_width=True)
+                            st.image(img, caption="confirmation screenshot", width="stretch")
                     except Exception:
                         st.caption("(screenshot could not be loaded)")
 
@@ -1273,6 +1273,47 @@ with tab_autoapply:
             repo = _os.environ.get("GITHUB_REPO", "")
         return tok, (repo or "ManojRam7/MLLM_AI_Career_Assistant")
 
+    def _gh_diagnose():
+        """Pinpoint WHY GitHub rejects us: bad token vs no repo access vs missing Actions permission."""
+        import requests as _rq
+        tok, repo = _gh_conf()
+        if not tok:
+            return "❌ No token found in secrets (`GITHUB_TOKEN`)."
+        hdr = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json",
+               "X-GitHub-Api-Version": "2022-11-28"}
+        notes = [f"Token length **{len(tok)}**, starts `{tok[:11]}…`", f"Repo: `{repo}`"]
+        if tok != tok.strip():
+            notes.append("⚠️ Token has leading/trailing whitespace — re-paste it.")
+        try:
+            u = _rq.get("https://api.github.com/user", headers=hdr, timeout=20)
+        except Exception as exc:
+            return "\n\n".join(notes + [f"❌ Network error: {str(exc)[:120]}"])
+        if u.status_code == 401:
+            return "\n\n".join(notes + [
+                "❌ **The token itself is invalid** (401 Bad credentials). Usually: it expired, it was "
+                "revoked, or only part of it got pasted. Generate a NEW fine-grained token and paste the "
+                "whole `github_pat_…` value into Streamlit secrets."])
+        if u.status_code != 200:
+            return "\n\n".join(notes + [f"❌ /user returned HTTP {u.status_code}: {u.text[:140]}"])
+        notes.append(f"✅ Token is valid — authenticated as **{u.json().get('login','?')}**")
+        r = _rq.get(f"https://api.github.com/repos/{repo}", headers=hdr, timeout=20)
+        if r.status_code != 200:
+            return "\n\n".join(notes + [
+                f"❌ Can't see `{repo}` (HTTP {r.status_code}). On a fine-grained token set "
+                "**Repository access → Only select repositories → this repo**."])
+        notes.append("✅ Repo access OK")
+        w = _rq.get(f"https://api.github.com/repos/{repo}/actions/workflows", headers=hdr, timeout=20)
+        if w.status_code != 200:
+            return "\n\n".join(notes + [
+                f"❌ No Actions access (HTTP {w.status_code}). Add permission "
+                "**Repository → Actions → Read and write**."])
+        names = [x.get("path", "") for x in w.json().get("workflows", [])]
+        notes.append(f"✅ Actions access OK — {len(names)} workflow(s) visible")
+        for need in ("apply.yml", "search.yml"):
+            notes.append((" ✅ " if any(need in n for n in names) else " ❌ ") +
+                         f"`{need}` {'found' if any(need in n for n in names) else 'NOT found on main — push it'}")
+        return "\n\n".join(notes)
+
     def _trigger_workflow(wf_file: str, inputs: dict):
         """Fire a workflow_dispatch. Returns (ok, message)."""
         import requests as _rq
@@ -1287,6 +1328,17 @@ with tab_autoapply:
                 json={"ref": "main", "inputs": {k: str(v).lower() if isinstance(v, bool) else str(v)
                                                 for k, v in inputs.items()}}, timeout=25)
             if r.status_code == 204:
+                # give GitHub a moment to create the run, then link to THAT run (not the workflow list)
+                import time as _t
+                for _ in range(6):
+                    _t.sleep(2)
+                    rr = _rq.get(f"https://api.github.com/repos/{repo}/actions/workflows/{wf_file}/runs"
+                                 "?per_page=1", headers={"Authorization": f"Bearer {tok}",
+                                                         "Accept": "application/vnd.github+json"}, timeout=20)
+                    if rr.status_code == 200:
+                        runs = rr.json().get("workflow_runs") or []
+                        if runs:
+                            return True, runs[0].get("html_url") or ""
                 return True, f"https://github.com/{repo}/actions/workflows/{wf_file}"
             return False, f"HTTP {r.status_code}: {r.text[:180]}"
         except Exception as exc:
@@ -1358,7 +1410,7 @@ with tab_autoapply:
         st.markdown(f"**{n_sel}** URL(s) selected · submit = **{'AUTO' if auto_submit_batch else 'review first'}**")
 
         cta1, cta2 = st.columns([2, 1])
-        if cta1.button("➕ Queue these for applying", type="primary", use_container_width=True,
+        if cta1.button("➕ Queue these for applying", type="primary", width="stretch",
                        disabled=(n_sel == 0), key="aa_queue_btn"):
             items = []
             for lbl in picked:
@@ -1375,7 +1427,7 @@ with tab_autoapply:
                 _rerun_aa()
             except Exception as _e:
                 st.error(f"Could not queue: {str(_e)[:160]}")
-        if cta2.button("🧹 Clear finished", use_container_width=True, key="aa_clear_done"):
+        if cta2.button("🧹 Clear finished", width="stretch", key="aa_clear_done"):
             try:
                 _store_aa.clear_apply_requests("done"); _rerun_aa()
             except Exception:
@@ -1405,17 +1457,36 @@ with tab_autoapply:
                 st.code(f'GITHUB_TOKEN = "github_pat_..."\nGITHUB_REPO = "{_repo}"', language="toml")
                 st.caption("Then reload this page — the Run button goes live.")
         else:
-            if st.button("🚀 Run Auto-Apply in the cloud", type="primary", use_container_width=True,
+            if st.button("🚀 Run Auto-Apply in the cloud", type="primary", width="stretch",
                          disabled=(n_queued == 0), key="aa_run_cloud"):
                 ok, msg = _trigger_workflow("apply.yml", {
                     "limit": int(run_limit), "source": "queued-urls",
                     "submit": bool(auto_submit_batch), "min_score": int(thr_aa)})
                 if ok:
                     st.success("Started. It's applying on GitHub's servers now — you can close this page.")
-                    st.link_button("📺 Watch the run", msg, use_container_width=True)
+                    st.link_button("📺 Watch the run", msg, width="stretch")
                     st.caption("Statuses below update as each application finishes (hit Refresh).")
+                elif "401" in msg or "Bad credentials" in msg:
+                    st.error("**GitHub rejected the token (401 Bad credentials).** The token is invalid, "
+                             "expired, or was only partly pasted — it's not a permissions problem. "
+                             "Generate a fresh fine-grained token and paste the whole value.")
                 else:
                     st.error(f"Could not start the run: {msg}")
+            if st.button("🔧 Test GitHub connection", width="stretch", key="aa_gh_test"):
+                with st.spinner("Checking token, repo access and workflows…"):
+                    st.info(_gh_diagnose())
+            with st.expander("Fix a rejected token (step by step)"):
+                st.markdown(
+                    "1. GitHub → **Settings → Developer settings → Personal access tokens → "
+                    "Fine-grained tokens → Generate new token**\n"
+                    f"2. **Repository access → Only select repositories → `{_repo}`**\n"
+                    "3. **Permissions → Repository → Actions → Read and write**\n"
+                    "4. Generate, then **copy the full `github_pat_…` string** (it's shown once)\n"
+                    "5. Streamlit Cloud → your app → **Settings → Secrets** → paste:")
+                st.code(f'GITHUB_TOKEN = "github_pat_PASTE_WHOLE_VALUE"\nGITHUB_REPO  = "{_repo}"',
+                        language="toml")
+                st.caption("Save, wait for the app to reboot, then press **Test GitHub connection**. "
+                           "Common cause of 401: the token expired, or a character was missed when copying.")
         with st.expander("Prefer to run it on your laptop instead?"):
             st.code("python scripts/auto_apply.py --from-queue", language="bash")
             st.caption("Opens a visible browser you can watch and solve CAPTCHAs in. The cloud run above "
@@ -1437,16 +1508,57 @@ with tab_autoapply:
                                        "auto = the sector for this hour")
         if not _tok:
             st.caption("Add the GitHub token above to enable cloud search runs.")
-        elif st.button("🔍 Run search in the cloud", use_container_width=True,
+        elif st.button("🔍 Run search in the cloud", width="stretch",
                        disabled=(not src_pick), key="aa_run_search"):
             ok, msg = _trigger_workflow("search.yml", {
                 "sources": ",".join(_SRC_OPTS[s] for s in src_pick),
                 "sector": src_sector, "min_fit": int(src_fit), "mode": "recurring"})
             if ok:
                 st.success("Search started in the cloud. New jobs appear here once it finishes.")
-                st.link_button("📺 Watch the run", msg, use_container_width=True)
+                st.link_button("📺 Watch the run", msg, width="stretch")
             else:
                 st.error(f"Could not start the search: {msg}")
+
+        # ---- 4c) WATCH IT BACK: screenshots of each cloud fill --------------------------------
+        st.divider()
+        st.markdown("### 🎬 Watch what the cloud run did")
+        st.caption("The cloud browser is headless, so every application is screenshotted at each stage — "
+                   "form opened → fields filled → submitted. Flip through them here, on phone or Mac. "
+                   "(A full video of the run is also attached to the Actions run as `apply-recording`.)")
+        try:
+            _runs = _store_aa.apply_step_runs(limit=25)
+        except Exception:
+            _runs = []
+        if not _runs:
+            st.info("No recordings yet — they appear here after your next cloud run.")
+        else:
+            _rlbl = {}
+            for r in _runs:
+                when = str(r.get("finished_at") or "")[:16]
+                _rlbl[f"{when} · {(r.get('role_title') or 'Application')[:40]} — "
+                      f"{(r.get('company') or '')[:22]} ({r.get('steps', 0)} shots)"] = r
+            pick_run = st.selectbox("Application", list(_rlbl.keys()), key="aa_film_pick")
+            if pick_run:
+                _r = _rlbl[pick_run]
+                try:
+                    steps = _store_aa.apply_steps(_r["url"], _r.get("run_id") or "")
+                except Exception:
+                    steps = []
+                if steps:
+                    labels = [f"{s.get('label') or ('step ' + str(s.get('step_no')))}" for s in steps]
+                    idx = st.radio("Stage", range(len(steps)), format_func=lambda i: labels[i],
+                                   horizontal=True, key="aa_film_stage")
+                    s = steps[int(idx)]
+                    if s.get("note"):
+                        st.caption(s["note"])
+                    if s.get("has_shot"):
+                        try:
+                            img = _store_aa.apply_step_shot(int(s["id"]))
+                            if img:
+                                st.image(img, width="stretch")
+                        except Exception:
+                            st.caption("(screenshot could not be loaded)")
+                    st.caption(f"🔗 {_r['url']}")
 
         # ---- 5) live status of the queue -----------------------------------------------------
         st.divider()
@@ -1466,15 +1578,15 @@ with tab_autoapply:
             dfq["status"] = dfq["status"].map(lambda s: _status_emoji.get(s, s))
             show = dfq[["status", "title", "company", "source", "auto_submit", "url", "note"]].rename(
                 columns={"auto_submit": "auto?"})
-            st.dataframe(show, use_container_width=True, hide_index=True,
+            st.dataframe(show, width="stretch", hide_index=True,
                          height=min(len(show) * 35 + 40, 480))
             cc1, cc2 = st.columns(2)
-            if cc1.button("🗑️ Clear pending (queued)", use_container_width=True, key="aa_clear_pending"):
+            if cc1.button("🗑️ Clear pending (queued)", width="stretch", key="aa_clear_pending"):
                 try:
                     _store_aa.clear_apply_requests("queued"); _rerun_aa()
                 except Exception:
                     pass
-            if cc2.button("🧨 Clear ALL", use_container_width=True, key="aa_clear_all"):
+            if cc2.button("🧨 Clear ALL", width="stretch", key="aa_clear_all"):
                 try:
                     _store_aa.clear_apply_requests("all"); _rerun_aa()
                 except Exception:

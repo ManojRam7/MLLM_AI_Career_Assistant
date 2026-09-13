@@ -104,6 +104,21 @@ CREATE TABLE IF NOT EXISTS apply_requests (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS apply_requests_url_open
     ON apply_requests (url) WHERE status IN ('queued','processing');
+-- Step-by-step screenshots of an application being filled, so a headless CLOUD run is just as
+-- watchable as a local one (rendered as a filmstrip in the app).
+CREATE TABLE IF NOT EXISTS apply_steps (
+    id         BIGSERIAL PRIMARY KEY,
+    url        TEXT,
+    company    TEXT DEFAULT '',
+    role_title TEXT DEFAULT '',
+    run_id     TEXT DEFAULT '',
+    step_no    INT DEFAULT 0,
+    label      TEXT DEFAULT '',
+    note       TEXT DEFAULT '',
+    shot       BYTEA,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS apply_steps_run ON apply_steps (run_id, step_no);
 """
 
 UPSERT = """
@@ -485,6 +500,39 @@ class Store:
     def apply_screenshot(self, log_id: int) -> bytes | None:
         with self.conn.cursor() as cur:
             cur.execute("SELECT screenshot FROM apply_log WHERE id=%s", (log_id,))
+            row = cur.fetchone()
+            return bytes(row[0]) if row and row[0] is not None else None
+
+    # ------------------------------------------------------------------ apply step screenshots
+    def log_apply_step(self, *, url: str, company: str = "", role_title: str = "", run_id: str = "",
+                       step_no: int = 0, label: str = "", note: str = "",
+                       shot: bytes | None = None) -> None:
+        """Save ONE screenshot of a stage of the fill (so a cloud run can be replayed visually)."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO apply_steps (url,company,role_title,run_id,step_no,label,note,shot) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                (url, company, role_title, run_id, step_no, label, note[:300], shot))
+
+    def apply_step_runs(self, limit: int = 25) -> list[dict[str, Any]]:
+        """Most recent applications that have a screenshot filmstrip."""
+        return self._rows(
+            "SELECT url, max(company) AS company, max(role_title) AS role_title, run_id, "
+            "count(*) AS steps, max(created_at) AS finished_at "
+            "FROM apply_steps GROUP BY url, run_id ORDER BY max(created_at) DESC LIMIT %s", (limit,))
+
+    def apply_steps(self, url: str, run_id: str = "") -> list[dict[str, Any]]:
+        if run_id:
+            return self._rows(
+                "SELECT id,step_no,label,note,created_at,(shot IS NOT NULL) AS has_shot FROM apply_steps "
+                "WHERE url=%s AND run_id=%s ORDER BY step_no", (url, run_id))
+        return self._rows(
+            "SELECT id,step_no,label,note,created_at,(shot IS NOT NULL) AS has_shot FROM apply_steps "
+            "WHERE url=%s ORDER BY step_no", (url,))
+
+    def apply_step_shot(self, step_id: int) -> bytes | None:
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT shot FROM apply_steps WHERE id=%s", (step_id,))
             row = cur.fetchone()
             return bytes(row[0]) if row and row[0] is not None else None
 
