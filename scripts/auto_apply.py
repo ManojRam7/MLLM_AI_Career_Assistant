@@ -581,9 +581,13 @@ def main() -> None:
                 print(f"    telegram: {'sent' if ok else det}")
             if blocked:
                 outcome = "needs_manual"          # CAPTCHA — you finish this one; never auto-solved
-            elif submitted or not do_submit:
+            elif submitted:
                 outcome = "submitted"
+            elif not do_submit and interactive:
+                outcome = "submitted"             # you reviewed + submitted it yourself during the pause
             else:
+                # UNATTENDED fill-only = a DRY RUN. The browser closes, so nothing was sent —
+                # never mark these applied, or you'd lose track of real applications.
                 outcome = "needs_submit"
             # log every REAL application (a scored queued job OR a from-queue URL); skip only --url tests
             if job.get("dedupe_key") or req_id:
@@ -591,8 +595,8 @@ def main() -> None:
                     store.log_apply(dedupe_key=job.get("dedupe_key", ""), company=job.get("company", ""),
                                     role_title=job.get("title", ""), country=job.get("country", ""),
                                     url=job.get("url", ""), cv=label, status=outcome, screenshot=img)
-                    if job.get("dedupe_key"):
-                        store.set_status(job["dedupe_key"], "applied")
+                    if job.get("dedupe_key") and outcome == "submitted":
+                        store.set_status(job["dedupe_key"], "applied")   # only when really submitted
                     trk.add(company=job.get("company", ""), role_title=job.get("title", "") or "Application",
                             country=job.get("country", "United Kingdom"), source_url=job.get("url", ""),
                             status="applied", applied_date=dt.date.today(), notes=f"CV: {label}")

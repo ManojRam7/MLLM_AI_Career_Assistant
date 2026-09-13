@@ -1252,10 +1252,45 @@ with tab_autoapply:
         except Exception:
             st.experimental_rerun()
 
-    st.subheader("🤖 Auto-Apply — queue jobs to auto-fill on your laptop")
-    st.caption("Pick scored jobs or paste any application URL, choose whether to auto-submit, and press "
-               "**Queue**. Then on your laptop run the applier — it fills each form with your full profile "
-               "in a browser you can watch (and where you solve any CAPTCHA). Works from phone or laptop.")
+    st.subheader("🤖 Auto-Apply — runs in the cloud, no laptop needed")
+    st.caption("Pick scored jobs or paste any application URL, choose whether to auto-submit, press "
+               "**Queue**, then hit **Run now**. It applies on GitHub's servers — you can close this page. "
+               "Forms showing a CAPTCHA are flagged `needs_manual` for you to finish; everything else is "
+               "automatic. Works the same from your phone or Mac.")
+
+    # ---- GitHub Actions trigger (this is what makes it fully online) --------------------------
+    def _gh_conf():
+        """(token, repo) from Streamlit secrets / env. repo like 'ManojRam7/MLLM_AI_Career_Assistant'."""
+        tok = repo = ""
+        for k in ("GITHUB_TOKEN", "GH_TOKEN"):
+            try:
+                tok = tok or str(st.secrets.get(k, "") or _os.environ.get(k, ""))
+            except Exception:
+                tok = tok or _os.environ.get(k, "")
+        try:
+            repo = str(st.secrets.get("GITHUB_REPO", "") or _os.environ.get("GITHUB_REPO", ""))
+        except Exception:
+            repo = _os.environ.get("GITHUB_REPO", "")
+        return tok, (repo or "ManojRam7/MLLM_AI_Career_Assistant")
+
+    def _trigger_workflow(wf_file: str, inputs: dict):
+        """Fire a workflow_dispatch. Returns (ok, message)."""
+        import requests as _rq
+        tok, repo = _gh_conf()
+        if not tok:
+            return False, "no-token"
+        try:
+            r = _rq.post(
+                f"https://api.github.com/repos/{repo}/actions/workflows/{wf_file}/dispatches",
+                headers={"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json",
+                         "X-GitHub-Api-Version": "2022-11-28"},
+                json={"ref": "main", "inputs": {k: str(v).lower() if isinstance(v, bool) else str(v)
+                                                for k, v in inputs.items()}}, timeout=25)
+            if r.status_code == 204:
+                return True, f"https://github.com/{repo}/actions/workflows/{wf_file}"
+            return False, f"HTTP {r.status_code}: {r.text[:180]}"
+        except Exception as exc:
+            return False, str(exc)[:180]
 
     _aacfg = cfg.settings.get("apply", {})
     _aathr_default = int(_aacfg.get("threshold", 85))
@@ -1281,6 +1316,19 @@ with tab_autoapply:
             f"Scored direct-ATS roles ≥ {thr_aa}  ({len(scored)} available)",
             list(opt_map.keys()), key="aa_pick",
             help="These are high-fit jobs on real company ATS sites (Greenhouse/Lever/Ashby/Workday…).")
+        if not scored:
+            # explain an empty dropdown instead of leaving it mysterious
+            try:
+                _s_aa, _top_aa = _store_aa.apply_stats(thr=thr_aa)
+                st.info(
+                    f"Nothing at ≥ {thr_aa} yet. Direct-employer ATS roles you have: "
+                    f"**{_s_aa.get('ats85', 0)}** at ≥85 · **{_s_aa.get('ats90', 0)}** at ≥90 · "
+                    f"**{_s_aa.get('ats_total', 0)}** total. "
+                    f"{_s_aa.get('agg_thr', 0)} high-fit roles sit on LinkedIn/Indeed URLs, which can't be "
+                    "auto-filled — lower the slider, run a search below, or paste a URL directly.")
+            except Exception:
+                st.info(f"No scored direct-ATS roles at ≥ {thr_aa}. Lower the slider, run a search below, "
+                        "or paste an application URL directly.")
 
         # ---- 2) paste any URLs ---------------------------------------------------------------
         pasted_raw = st.text_area(
@@ -1312,7 +1360,7 @@ with tab_autoapply:
                               "auto_submit": auto_submit_batch})
             try:
                 added = _store_aa.add_apply_requests(items)
-                st.success(f"Queued {added} URL(s). Now run the applier on your laptop (command below).")
+                st.success(f"Queued {added} URL(s). Now press **▶ Run Auto-Apply in the cloud** below.")
                 _rerun_aa()
             except Exception as _e:
                 st.error(f"Could not queue: {str(_e)[:160]}")
@@ -1322,13 +1370,72 @@ with tab_autoapply:
             except Exception:
                 pass
 
-        # ---- 4) the run command --------------------------------------------------------------
+        # ---- 4) RUN IT IN THE CLOUD ----------------------------------------------------------
         st.divider()
-        st.markdown("**On your laptop, run this to apply to the queue:**")
-        st.code("python scripts/auto_apply.py --from-queue", language="bash")
-        st.caption("Runs a visible browser so you can watch it fill, solve any CAPTCHA, and (if you left "
-                   "auto-submit off) submit each one yourself. It picks the right CV per job automatically. "
-                   "Add `--headless` only for fully hands-off runs with auto-submit on.")
+        st.markdown("### ▶ Run it now (in the cloud)")
+        _tok, _repo = _gh_conf()
+        n_queued = 0
+        try:
+            n_queued = len(_store_aa.apply_requests("queued", limit=200))
+        except Exception:
+            pass
+        run_limit = st.number_input("How many applications this run", 1, 50, min(10, max(1, n_queued or 10)),
+                                    key="aa_run_limit")
+        st.caption(f"{n_queued} URL(s) currently waiting in the queue.")
+        if not _tok:
+            st.warning("To run in the cloud, add a GitHub token so this page can start the workflow.")
+            with st.expander("How to set it up (2 minutes)"):
+                st.markdown(
+                    "1. GitHub → **Settings → Developer settings → Personal access tokens → "
+                    "Fine-grained tokens → Generate new token**\n"
+                    f"2. Repository access: only **{_repo}**\n"
+                    "3. Permissions → Repository → **Actions: Read and write**\n"
+                    "4. Copy the token, then in **Streamlit Cloud → your app → Settings → Secrets** add:")
+                st.code(f'GITHUB_TOKEN = "github_pat_..."\nGITHUB_REPO = "{_repo}"', language="toml")
+                st.caption("Then reload this page — the Run button goes live.")
+        else:
+            if st.button("🚀 Run Auto-Apply in the cloud", type="primary", use_container_width=True,
+                         disabled=(n_queued == 0), key="aa_run_cloud"):
+                ok, msg = _trigger_workflow("apply.yml", {
+                    "limit": int(run_limit), "source": "queued-urls",
+                    "submit": bool(auto_submit_batch), "min_score": int(thr_aa)})
+                if ok:
+                    st.success("Started. It's applying on GitHub's servers now — you can close this page.")
+                    st.link_button("📺 Watch the run", msg, use_container_width=True)
+                    st.caption("Statuses below update as each application finishes (hit Refresh).")
+                else:
+                    st.error(f"Could not start the run: {msg}")
+        with st.expander("Prefer to run it on your laptop instead?"):
+            st.code("python scripts/auto_apply.py --from-queue", language="bash")
+            st.caption("Opens a visible browser you can watch and solve CAPTCHAs in. The cloud run above "
+                       "does the same thing unattended.")
+
+        # ---- 4b) run a SEARCH in the cloud, by source, with its own threshold -----------------
+        st.divider()
+        st.markdown("### 🔎 Run a job search (by source)")
+        st.caption("Run one section of the search on demand with its own fit threshold — cheaper and "
+                   "faster than the full daily sweep. Runs in the cloud.")
+        _SRC_OPTS = {"Company ATS boards": "ats", "Adzuna (multi-country)": "adzuna", "Reed": "reed",
+                     "Bright Data / Google SERP": "brightdata"}
+        src_pick = st.multiselect("Sources", list(_SRC_OPTS.keys()), default=["Company ATS boards"],
+                                  key="aa_src_pick")
+        s1, s2 = st.columns(2)
+        src_fit = s1.slider("Alert fit threshold", 0, 100, 75, 5, key="aa_src_fit")
+        src_sector = s2.selectbox("Scope", ["full", "all", "auto"], index=0, key="aa_src_sector",
+                                  help="full = broad sweep · all = every bucket-list company · "
+                                       "auto = the sector for this hour")
+        if not _tok:
+            st.caption("Add the GitHub token above to enable cloud search runs.")
+        elif st.button("🔍 Run search in the cloud", use_container_width=True,
+                       disabled=(not src_pick), key="aa_run_search"):
+            ok, msg = _trigger_workflow("search.yml", {
+                "sources": ",".join(_SRC_OPTS[s] for s in src_pick),
+                "sector": src_sector, "min_fit": int(src_fit), "mode": "recurring"})
+            if ok:
+                st.success("Search started in the cloud. New jobs appear here once it finishes.")
+                st.link_button("📺 Watch the run", msg, use_container_width=True)
+            else:
+                st.error(f"Could not start the search: {msg}")
 
         # ---- 5) live status of the queue -----------------------------------------------------
         st.divider()
@@ -1342,8 +1449,9 @@ with tab_autoapply:
         else:
             import pandas as _pd_aa
             dfq = _pd_aa.DataFrame(rows)
-            _status_emoji = {"queued": "⏳ queued", "processing": "⚙️ processing", "done": "✅ done",
-                             "needs_submit": "📝 filled — submit", "skipped": "⏭️ skipped", "error": "❌ error"}
+            _status_emoji = {"queued": "⏳ queued", "processing": "⚙️ applying…", "done": "✅ applied",
+                             "needs_submit": "📝 filled — submit it", "needs_manual": "🔒 CAPTCHA — finish it",
+                             "skipped": "⏭️ skipped", "error": "❌ error"}
             dfq["status"] = dfq["status"].map(lambda s: _status_emoji.get(s, s))
             show = dfq[["status", "title", "company", "source", "auto_submit", "url", "note"]].rename(
                 columns={"auto_submit": "auto?"})
