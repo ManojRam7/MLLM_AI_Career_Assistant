@@ -1320,12 +1320,23 @@ with tab_autoapply:
             # explain an empty dropdown instead of leaving it mysterious
             try:
                 _s_aa, _top_aa = _store_aa.apply_stats(thr=thr_aa)
+                _ats = int(_s_aa.get("ats_thr", 0))          # direct-ATS roles at this threshold
+                _app = int(_s_aa.get("applied_thr", 0))      # …already applied
+                _nt = int(_s_aa.get("nontarget_thr", 0))     # …not a target role
+                _agg = int(_s_aa.get("agg_thr", 0))          # high-fit but stuck on LinkedIn/Indeed
+                _why = []
+                if _app:
+                    _why.append(f"{_app} already applied")
+                if _nt:
+                    _why.append(f"{_nt} not a target role")
                 st.info(
-                    f"Nothing at ≥ {thr_aa} yet. Direct-employer ATS roles you have: "
-                    f"**{_s_aa.get('ats85', 0)}** at ≥85 · **{_s_aa.get('ats90', 0)}** at ≥90 · "
-                    f"**{_s_aa.get('ats_total', 0)}** total. "
-                    f"{_s_aa.get('agg_thr', 0)} high-fit roles sit on LinkedIn/Indeed URLs, which can't be "
-                    "auto-filled — lower the slider, run a search below, or paste a URL directly.")
+                    f"**0 to apply to at ≥ {thr_aa}.** You have **{_ats}** direct-employer ATS role(s) at "
+                    f"that score" + (f" — but {' and '.join(_why)}." if _why else ".") +
+                    (f"  Another **{_agg}** high-fit role(s) sit on LinkedIn/Indeed URLs, which can't be "
+                     f"auto-filled." if _agg else "") +
+                    f"  (Across all scores you have {_s_aa.get('ats_total', 0)} direct-ATS roles.)  "
+                    "→ Lower the slider, **run an ATS search below** to find more direct-employer jobs, "
+                    "or paste an application URL.")
             except Exception:
                 st.info(f"No scored direct-ATS roles at ≥ {thr_aa}. Lower the slider, run a search below, "
                         "or paste an application URL directly.")
