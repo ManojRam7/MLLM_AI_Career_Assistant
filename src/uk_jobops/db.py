@@ -119,6 +119,22 @@ CREATE TABLE IF NOT EXISTS apply_steps (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS apply_steps_run ON apply_steps (run_id, step_no);
+-- LIVE decision stream: one row per thing the agent does (open form, answer a field, submit), written
+-- AS IT HAPPENS so the app can show a cloud run in real time and you can judge the brain's answers.
+CREATE TABLE IF NOT EXISTS apply_events (
+    id         BIGSERIAL PRIMARY KEY,
+    run_id     TEXT DEFAULT '',
+    url        TEXT DEFAULT '',
+    company    TEXT DEFAULT '',
+    role_title TEXT DEFAULT '',
+    kind       TEXT DEFAULT 'field',   -- run_start | job_start | field | note | submit | job_end | run_end
+    field      TEXT DEFAULT '',
+    answer     TEXT DEFAULT '',
+    origin     TEXT DEFAULT '',        -- profile | ai | auto
+    ok         BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS apply_events_run ON apply_events (run_id, id);
 """
 
 UPSERT = """
@@ -502,6 +518,31 @@ class Store:
             cur.execute("SELECT screenshot FROM apply_log WHERE id=%s", (log_id,))
             row = cur.fetchone()
             return bytes(row[0]) if row and row[0] is not None else None
+
+    # ------------------------------------------------------------------ live apply event stream
+    def log_apply_event(self, *, run_id: str = "", url: str = "", company: str = "", role_title: str = "",
+                        kind: str = "field", field: str = "", answer: str = "", origin: str = "",
+                        ok: bool = True) -> None:
+        """Append ONE live event. Best-effort: never let logging break an application."""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO apply_events (run_id,url,company,role_title,kind,field,answer,origin,ok) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (run_id, url, company, role_title, kind, field[:180], str(answer)[:400], origin, ok))
+        except Exception:
+            pass
+
+    def apply_event_runs(self, limit: int = 15) -> list[dict[str, Any]]:
+        return self._rows(
+            "SELECT run_id, min(created_at) AS started_at, max(created_at) AS last_at, count(*) AS events, "
+            "count(DISTINCT url) AS jobs FROM apply_events WHERE run_id <> '' "
+            "GROUP BY run_id ORDER BY max(created_at) DESC LIMIT %s", (limit,))
+
+    def apply_events(self, run_id: str, after_id: int = 0, limit: int = 800) -> list[dict[str, Any]]:
+        return self._rows(
+            "SELECT id,url,company,role_title,kind,field,answer,origin,ok,created_at FROM apply_events "
+            "WHERE run_id=%s AND id > %s ORDER BY id LIMIT %s", (run_id, after_id, limit))
 
     # ------------------------------------------------------------------ apply step screenshots
     def log_apply_step(self, *, url: str, company: str = "", role_title: str = "", run_id: str = "",

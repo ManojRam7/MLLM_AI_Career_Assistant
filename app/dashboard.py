@@ -1519,6 +1519,64 @@ with tab_autoapply:
             else:
                 st.error(f"Could not start the search: {msg}")
 
+        # ---- 4b2) LIVE RUN: the brain's decisions, field by field, as they happen -------------
+        st.divider()
+        st.markdown("### 🔴 Live run — what the brain is answering")
+        st.caption("Every field the agent fills is streamed here as it happens, with the answer it chose "
+                   "and whether it came from your profile or the AI. This is how you judge it.")
+
+        def _render_live(_store, _auto: bool):
+            try:
+                runs = _store.apply_event_runs(limit=15)
+            except Exception as _e:
+                st.warning(f"Live stream unavailable: {str(_e)[:120]}")
+                return
+            if not runs:
+                st.info("No runs yet. Trigger a cloud run above and this fills in live.")
+                return
+            rl = {f"{str(r['started_at'])[:16]} · run {r['run_id']} · {r['jobs']} job(s) · "
+                  f"{r['events']} events": r["run_id"] for r in runs}
+            pick = st.selectbox("Run", list(rl.keys()), key="aa_live_run")
+            rid = rl[pick]
+            try:
+                evs = _store.apply_events(rid)
+            except Exception:
+                evs = []
+            done = any(e["kind"] == "run_end" for e in evs)
+            st.markdown(("✅ **Finished**" if done else "🔴 **Running…**") + f" · {len(evs)} events")
+            cur_job = None
+            for e in evs:
+                k = e["kind"]
+                if k == "run_start":
+                    st.markdown(f"▶️ **Run started** — {e['answer']}")
+                elif k == "job_start":
+                    cur_job = e
+                    st.markdown(f"---\n**📄 {e.get('role_title') or 'Application'} — "
+                                f"{e.get('company') or ''}**  ·  CV: `{e.get('answer')}`")
+                elif k == "field":
+                    tag = "🧠 AI" if e.get("origin") == "ai" else "👤 profile"
+                    mark = "✅" if e.get("ok") else "⚠️"
+                    st.markdown(f"{mark} **{e.get('field','')}** → {e.get('answer','')}  \n"
+                                f"<span style='opacity:.6;font-size:.85em'>{tag}</span>",
+                                unsafe_allow_html=True)
+                elif k == "job_end":
+                    st.markdown(f"🏁 **{e.get('field','')}** → `{e.get('answer','')}`")
+                elif k == "run_end":
+                    st.markdown(f"✅ **Run finished** — {e.get('answer','')}")
+            if not done and _auto:
+                st.caption("Auto-refreshing every 3s…")
+
+        _auto_live = st.toggle("Auto-refresh while a run is in progress", value=True, key="aa_live_auto")
+        try:                                   # Streamlit >=1.37 can self-refresh a fragment
+            if _auto_live and hasattr(st, "fragment"):
+                st.fragment(run_every=3)(lambda: _render_live(_store_aa, True))()
+            else:
+                _render_live(_store_aa, False)
+                if st.button("🔄 Refresh live view", width="stretch", key="aa_live_refresh"):
+                    _rerun_aa()
+        except Exception:
+            _render_live(_store_aa, False)
+
         # ---- 4c) WATCH IT BACK: screenshots of each cloud fill --------------------------------
         st.divider()
         st.markdown("### 🎬 Watch what the cloud run did")

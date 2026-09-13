@@ -472,7 +472,10 @@ def main() -> None:
     llm = LLM(cfg)
     trk = Tracker(sec.supabase_db_url); trk.init_schema()
     tg = (sec.telegram_bot_token, sec.telegram_chat_id)
-    print(f"auto_apply {_VERSION}  |  {len(queue)} role(s) to apply to (>= {thr}). auto_submit={auto_submit}\n")
+    print(f"auto_apply {_VERSION}  |  {len(queue)} role(s) to apply to (>= {thr}). auto_submit={auto_submit}")
+    print(f"RUN_ID={RUN_ID}  (watch it live in the app → Auto-Apply → Live run)\n")
+    store.log_apply_event(run_id=RUN_ID, kind="run_start", field="queued",
+                          answer=f"{len(queue)} application(s)", origin="auto")
 
     try:
         from playwright.sync_api import sync_playwright
@@ -525,6 +528,9 @@ def main() -> None:
                 except Exception:
                     pass
 
+            store.log_apply_event(run_id=RUN_ID, url=job.get("url", ""), company=job.get("company", ""),
+                                  role_title=job.get("title", ""), kind="job_start",
+                                  field="CV", answer=label, origin="auto")
             try:
                 open_form(page, job.get("url"))
                 snap("1 · Application form opened")
@@ -552,10 +558,18 @@ def main() -> None:
                 filled, missed = 0, []
                 for f in fields:
                     v = answers.get(str(f["apply_id"]))
-                    if _fill_field(page, f, v):
+                    _got = _fill_field(page, f, v)
+                    if _got:
                         filled += 1
                     elif v not in (None, ""):
                         missed.append(f"{(f.get('label','') or '')[:26]}[{f['kind']}]={str(v)[:24]}")
+                    # stream the decision so you can judge the brain live, field by field
+                    if v not in (None, ""):
+                        store.log_apply_event(
+                            run_id=RUN_ID, url=job.get("url", ""), company=job.get("company", ""),
+                            role_title=job.get("title", ""), kind="field",
+                            field=(f.get("label") or "")[:180], answer=v,
+                            origin=("profile" if str(f["apply_id"]) in det else "ai"), ok=bool(_got))
                 # ensure any consent / agree checkbox is ticked even if everything else missed
                 for f in fields:
                     if f["kind"] == "checkbox" and any(x in (f.get("label", "").lower())
@@ -637,6 +651,10 @@ def main() -> None:
                     print(f"    ! log error: {str(exc)[:80]}")
             else:
                 print("    (test mode — not logged to DB/tracker)")
+            store.log_apply_event(run_id=RUN_ID, url=job.get("url", ""), company=job.get("company", ""),
+                                  role_title=job.get("title", ""), kind="job_end",
+                                  field=f"{filled} field(s) filled", answer=outcome, origin="auto",
+                                  ok=(outcome == "submitted"))
             if req_id:                        # mark the Streamlit-queued request done/needs-submit
                 try:
                     _rs = {"submitted": "done", "needs_manual": "needs_manual"}.get(outcome, "needs_submit")
@@ -648,6 +666,8 @@ def main() -> None:
             except Exception:
                 pass
         browser.close()
+    store.log_apply_event(run_id=RUN_ID, kind="run_end", field="finished",
+                          answer=f"{len(queue)} application(s) processed", origin="auto")
     store.close(); trk.close()
     print("\nDone. Dashboard → Apply Queue → Apply Activity for the log + screenshots.")
 
