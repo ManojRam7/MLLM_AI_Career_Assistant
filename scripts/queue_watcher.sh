@@ -12,6 +12,27 @@ set -uo pipefail
 export DISPLAY="${DISPLAY:-:1}"
 INTERVAL="${WATCH_INTERVAL:-15}"
 
+# A Codespace has NO .env — secrets must come from Codespaces secrets. Fail loudly, not silently.
+if [ -z "${SUPABASE_DB_URL:-}" ] && [ ! -f .env ]; then
+  cat <<'MSG'
+❌ SUPABASE_DB_URL is not set in this Codespace, so I can't read your apply queue.
+
+Add it once (it then applies to every Codespace you create):
+  GitHub → repo → Settings → Secrets and variables → Codespaces → New repository secret
+    SUPABASE_DB_URL     (required)
+    OPENAI_API_KEY / GEMINI_API_KEY / DEEPSEEK_API_KEY   (for open-ended answers)
+    TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID                (optional notifications)
+
+Then rebuild or reopen this Codespace and the watcher starts automatically.
+MSG
+  exit 1
+fi
+
+# Playwright's browser may not be installed yet on a fresh container.
+if ! python -c "import playwright" 2>/dev/null; then
+  echo "▶ installing playwright…"; pip install -q playwright && playwright install --with-deps chromium
+fi
+
 # Make sure the virtual desktop is up (desktop-lite normally starts it for us).
 if ! xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
   echo "▶ starting virtual desktop on $DISPLAY …"

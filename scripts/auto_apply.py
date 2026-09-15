@@ -517,7 +517,11 @@ def main() -> None:
         # watch every keystroke on the noVNC desktop and take over. In GitHub Actions it is headless
         # and we record a video + step screenshots instead.
         headed = bool(_os.environ.get("DISPLAY")) and not args.headless
-        browser = p.chromium.launch(headless=not headed)
+        # Containers (Codespaces, Actions) need --no-sandbox or Chromium refuses to start.
+        _args = ["--no-sandbox", "--disable-dev-shm-usage"]
+        if headed:
+            _args.append("--start-maximized")
+        browser = p.chromium.launch(headless=not headed, args=_args)
         _vid_dir = pathlib.Path(cfg.path("output/apply_videos"))
         _ctx_kw = {"accept_downloads": True, "viewport": {"width": 1440, "height": 1000}}
         if not headed:                             # record video so an unwatched run is reviewable

@@ -1382,14 +1382,30 @@ with tab_autoapply:
             b2.link_button("Open Codespace", "https://github.com/codespaces", width="stretch")
             st.caption("Your Codespace runs a watcher that applies to anything you queue, automatically. "
                        "If it's not running, open the Codespace terminal and start it:")
-            with st.expander("Start the watcher manually"):
-                st.code("./scripts/queue_watcher.sh", language="bash")
-                st.caption("Or apply once, right now:  `./scripts/watch_apply.sh --from-queue`")
+            with st.expander("Viewer blank, or the watcher won't start?"):
+                st.markdown("**Run the checker** in the Codespace terminal — it tests every link in the "
+                            "chain and opens a browser on the desktop so you can see it working:")
+                st.code("bash scripts/check_live.sh", language="bash")
+                st.markdown("Then start the watcher:")
+                st.code("bash scripts/queue_watcher.sh", language="bash")
+                st.caption("Use `bash scripts/…` (not `./scripts/…`) — git often drops the executable "
+                           "bit, which is why `./scripts/queue_watcher.sh` can silently do nothing.")
             st.markdown("**Live browser**")
             _iframe(watch_url, height=640, scrolling=True)
-            st.caption("No password needed — it connects automatically. If it stays blank, check port "
-                       "**6080** is **Public** in the Codespace PORTS tab, and that the Codespace is "
-                       "still running (they stop after ~30 min idle).")
+            st.caption("No password needed — it connects on its own.")
+            with st.expander("🩵 Viewer connects but the desktop is BLANK?"):
+                st.markdown(
+                    "That's normal — it means the desktop is fine, but **nothing has opened a browser "
+                    "yet**. The watcher isn't running. Fix it once:\n\n"
+                    "**1 · Give the Codespace your secrets** (it has no `.env`)\n\n"
+                    "GitHub → repo → **Settings → Secrets and variables → Codespaces** → add "
+                    "`SUPABASE_DB_URL` (required), plus your LLM keys and `TELEGRAM_*` if you want "
+                    "answers and alerts.\n\n"
+                    "**2 · Rebuild the Codespace** so the watcher auto-starts — "
+                    "Command Palette → *Codespaces: Rebuild Container*.\n\n"
+                    "**3 · Or just start it now** in the Codespace terminal:")
+                st.code("./scripts/queue_watcher.sh", language="bash")
+                st.caption("Once it's running you'll see Chrome open here and start filling.")
 
         with st.expander("No Codespace? Run it headless in GitHub Actions instead"):
             lim = st.number_input("How many this run", 1, 50, min(10, max(1, n_q or 10)), key="aa_lim")
