@@ -1363,9 +1363,24 @@ with tab_autoapply:
 
     if _store_aa is not None:
         # ---- 1) threshold + pick from scored queue -------------------------------------------
-        thr_aa = st.slider("Minimum fit score to show", 0, 100, _aathr_default, 5, key="aa_thr")
+        _rc1, _rc2 = st.columns([3, 1])
+        thr_aa = _rc1.slider("Minimum fit score to show", 0, 100, _aathr_default, 5, key="aa_thr")
+        if _rc2.button("🔄 Refresh jobs", width="stretch", key="aa_refresh_jobs",
+                       help="Pull the newest jobs from the database (after a search run finishes)"):
+            st.cache_data.clear()
+            _rerun_aa()
         try:
             scored = _store_aa.apply_queue(min_score=thr_aa, limit=100)
+            try:                                # show how fresh the list is
+                _fresh = _store_aa._rows(
+                    "SELECT max(first_seen_at) AS newest, count(*) AS n FROM jobs "
+                    "WHERE first_seen_at > now() - interval '24 hours'")
+                if _fresh and _fresh[0].get("n"):
+                    st.caption(f"🆕 {_fresh[0]['n']} job(s) added in the last 24h · newest "
+                               f"{str(_fresh[0].get('newest'))[:16]}. "
+                               "The list below is read live from the database on every refresh.")
+            except Exception:
+                pass
         except Exception as _e:
             scored = []
             st.warning(f"Couldn't load scored queue: {str(_e)[:140]}")

@@ -293,6 +293,31 @@ def _fill_location(page, sel, value: str) -> bool:
         return False
 
 
+class _DeadPosting(Exception):
+    """Raised when the URL is a removed/expired posting, so we never log it as an application."""
+
+
+_DEAD_MARKERS = (
+    "page you are looking for doesn't exist", "page you are looking for does not exist",
+    "page not found", "page doesn't exist", "page does not exist", "we couldn't find",
+    "no longer available", "no longer accepting", "this job is no longer", "posting is closed",
+    "position has been filled", "job has expired", "this role has closed", "not found",
+)
+
+
+def _page_looks_dead(page, n_fields: int) -> bool:
+    """True if the URL is a dead/expired posting (404, removed, closed) rather than a real form.
+    Prevents reporting an 'application' for a page that never existed."""
+    if n_fields > 2:
+        return False                       # a real form is present — definitely not dead
+    try:
+        txt = (page.evaluate("() => (document.body ? document.body.innerText : '').slice(0,3000)")
+               or "").lower()
+    except Exception:
+        return False
+    return any(m in txt for m in _DEAD_MARKERS)
+
+
 def _has_captcha(page) -> bool:
     """Detect a CAPTCHA / bot-check on the page (reCAPTCHA, hCaptcha, Cloudflare, Turnstile)."""
     try:
@@ -395,6 +420,9 @@ def main() -> None:
     ap.add_argument("--cv", default="", help="force a CV key for --url (e.g. ai-engineer, ds-azure)")
     ap.add_argument("--from-queue", dest="from_queue", action="store_true",
                     help="apply to the URLs you queued from the Auto-Apply panel (apply_requests)")
+    ap.add_argument("--hold", type=int, default=None,
+                    help="seconds to keep the cloud browser alive after the run so you can watch / take "
+                         "over (default 120 in the cloud; 0 disables)")
     ap.add_argument("--local-browser", dest="local_browser", action="store_true",
                     help="force a local Chrome even if STEEL_API_KEY is set (no live viewer)")
     ap.add_argument("--ci", action="store_true",
@@ -555,6 +583,8 @@ def main() -> None:
             submitted = False
             filled = 0
             blocked = False
+            dead = False
+            errored = ""
             _step = {"n": 0}
 
             def snap(label: str, note: str = "") -> None:
@@ -586,6 +616,16 @@ def main() -> None:
                     print(f"      detected role: {(job['title'] or '?')[:46]}  →  CV {label}")
                 uploaded = _upload_cv(page, cv_path)
                 fields = page.evaluate(JS_EXTRACT)
+                # Is this a dead/expired posting rather than a form? Never report those as applied.
+                if _page_looks_dead(page, len(fields)):
+                    dead = True
+                    print("    🔗 DEAD LINK — this posting no longer exists (404 / closed / filled). Skipping.")
+                    snap("1 · Dead link (posting removed)", "no application was made")
+                    store.log_apply_event(run_id=RUN_ID, url=job.get("url", ""),
+                                          company=job.get("company", ""), role_title=job.get("title", ""),
+                                          kind="note", field="Dead link",
+                                          answer="posting no longer exists — skipped", origin="auto", ok=False)
+                    raise _DeadPosting()
                 if not fields:
                     print("    ! no form fields found on the page — check the URL opens the real APPLY form.")
                 # 1) DETERMINISTIC fill from the profile (name/email/visa/salary/diversity/... — no LLM,
@@ -655,8 +695,11 @@ def main() -> None:
                     snap("3 · Blocked by CAPTCHA", "left for you to finish manually")
                 elif not do_submit:
                     pause("    Review, then press Enter to record it (submit yourself first if you want)... ")
+            except _DeadPosting:
+                pass                                   # already logged; fall through to reporting
             except Exception as exc:
-                print(f"    ! error: {str(exc)[:120]}")
+                errored = str(exc)[:160]
+                print(f"    ! error: {errored[:120]}")
                 if not do_submit:
                     pause("    Press Enter when done... ")
             shot = str(shot_dir / f"{(job.get('company') or 'co').replace('/', '_')}_{int(time.time())}.png")
@@ -665,20 +708,27 @@ def main() -> None:
                 page.screenshot(path=shot, full_page=True); img = pathlib.Path(shot).read_bytes()
             except Exception:
                 pass
-            cap = f"{'✅ Applied' if (submitted or not do_submit) else '⚠️ Needs submit'}: {job.get('title')} — {job.get('company')}\nCV: {label}\n{job.get('url')}"
-            if all(tg) and img:
-                ok, det = notify.send_photo(tg[0], tg[1], shot, cap)
-                print(f"    telegram: {'sent' if ok else det}")
-            if blocked:
-                outcome = "needs_manual"          # CAPTCHA — you finish this one; never auto-solved
+            # ---- HONEST outcome: never claim an application that did not actually happen ----
+            if dead:
+                outcome, head = "dead_link", "🔗 Dead link — posting no longer exists (NOT applied)"
+            elif errored:
+                outcome, head = "error", f"❌ Failed: {errored[:70]} (NOT applied)"
+            elif blocked:
+                outcome, head = "needs_manual", "🔒 CAPTCHA — needs you to finish (NOT submitted)"
             elif submitted:
-                outcome = "submitted"
+                outcome, head = "submitted", "✅ Submitted"
             elif not do_submit and interactive:
-                outcome = "submitted"             # you reviewed + submitted it yourself during the pause
+                outcome, head = "submitted", "✅ Submitted by you during review"
+            elif do_submit:
+                outcome, head = "needs_submit", "⚠️ Filled, but no Submit button found (NOT submitted)"
             else:
                 # UNATTENDED fill-only = a DRY RUN. The browser closes, so nothing was sent —
                 # never mark these applied, or you'd lose track of real applications.
-                outcome = "needs_submit"
+                outcome, head = "filled_for_review", "📝 Filled only — auto-submit was OFF (NOT submitted)"
+            cap = f"{head}\n{job.get('title')} — {job.get('company')}\nCV: {label}\n{job.get('url')}"
+            if all(tg) and img:
+                ok, det = notify.send_photo(tg[0], tg[1], shot, cap)
+                print(f"    telegram: {'sent' if ok else det}")
             # log every REAL application (a scored queued job OR a from-queue URL); skip only --url tests
             if job.get("dedupe_key") or req_id:
                 try:
@@ -687,9 +737,19 @@ def main() -> None:
                                     url=job.get("url", ""), cv=label, status=outcome, screenshot=img)
                     if job.get("dedupe_key") and outcome == "submitted":
                         store.set_status(job["dedupe_key"], "applied")   # only when really submitted
-                    trk.add(company=job.get("company", ""), role_title=job.get("title", "") or "Application",
-                            country=job.get("country", "United Kingdom"), source_url=job.get("url", ""),
-                            status="applied", applied_date=dt.date.today(), notes=f"CV: {label}")
+                    elif job.get("dedupe_key") and outcome == "dead_link":
+                        store.set_status(job["dedupe_key"], "expired")   # don't keep surfacing dead URLs
+                    # TRACKER: only a REAL submission counts as an application. Everything else is a
+                    # to-do so your tracker never lies about what you've actually sent.
+                    if outcome == "submitted":
+                        trk.add(company=job.get("company", ""), role_title=job.get("title", "") or "Application",
+                                country=job.get("country", "United Kingdom"), source_url=job.get("url", ""),
+                                status="applied", applied_date=dt.date.today(), notes=f"CV: {label}")
+                    elif outcome in ("filled_for_review", "needs_submit", "needs_manual"):
+                        trk.add(company=job.get("company", ""), role_title=job.get("title", "") or "Application",
+                                country=job.get("country", "United Kingdom"), source_url=job.get("url", ""),
+                                status="to_submit", applied_date=None,
+                                notes=f"CV: {label} · {outcome} — filled by the agent, needs you to submit")
                 except Exception as exc:
                     print(f"    ! log error: {str(exc)[:80]}")
             else:
@@ -700,7 +760,8 @@ def main() -> None:
                                   ok=(outcome == "submitted"))
             if req_id:                        # mark the Streamlit-queued request done/needs-submit
                 try:
-                    _rs = {"submitted": "done", "needs_manual": "needs_manual"}.get(outcome, "needs_submit")
+                    _rs = {"submitted": "done", "needs_manual": "needs_manual", "dead_link": "dead_link",
+                           "error": "error", "filled_for_review": "needs_submit"}.get(outcome, "needs_submit")
                     store.set_apply_request_status(req_id, _rs, f"CV {label} · filled {filled} fields")
                 except Exception:
                     pass
@@ -708,6 +769,16 @@ def main() -> None:
                 page.close()
             except Exception:
                 pass
+        # HOLD the cloud session open so the live view isn't already dead when you open it
+        # ("Browser Disconnected"). You can also take over in these seconds.
+        _hold = args.hold if args.hold is not None else int(acfg.get("hold_open_seconds", 120))
+        if use_steel and _hold > 0:
+            print(f"\n⏳ Holding the live browser open for {_hold}s so you can watch / take over…")
+            store.log_apply_event(run_id=RUN_ID, kind="note", field="Live session held open",
+                                  answer=f"{_hold}s — watch or take control now", origin="auto")
+            _t0 = time.time()
+            while time.time() - _t0 < _hold:
+                time.sleep(5)
         try:
             browser.close()
         except Exception:
