@@ -1532,12 +1532,25 @@ with tab_autoapply:
                         st.link_button("Open the live browser (full screen)", _live_now, width="stretch")
                         _iframe(_live_now, height=620, scrolling=True)
                     else:
-                        st.warning(
-                            "No live browser session appeared. Almost always this means **STEEL_API_KEY "
-                            "is missing from your GitHub repo secrets** — a Streamlit secret is NOT "
-                            "visible to the workflow. Add it at: repo → Settings → Secrets and variables "
-                            "→ Actions → New repository secret → name `STEEL_API_KEY`. "
-                            "Then run again. (The run still applies — just headless, with screenshots.)")
+                        # Show the REAL reason if the runner logged one (quota, concurrency, bad key…)
+                        _why = ""
+                        try:
+                            for _e3 in (_store_aa.apply_events(
+                                    (_store_aa.apply_event_runs(limit=1) or [{}])[0].get("run_id", "")) or []):
+                                if _e3.get("field") == "Steel unavailable":
+                                    _why = _e3.get("answer", "")
+                        except Exception:
+                            pass
+                        if _why:
+                            st.error(f"Steel refused the session: **{_why}**\n\nCommon cause: the free tier "
+                                     "allows one session at a time and a previous one is still open — wait "
+                                     "for it to finish/release, then run again.")
+                        else:
+                            st.warning(
+                                "No live browser session appeared within 2 minutes. Either the runner is "
+                                "still installing, or `STEEL_API_KEY` isn't in your **GitHub repo** secrets "
+                                "(a Streamlit secret is not visible to the workflow). "
+                                "The run still applies — headless, with screenshots.")
                     st.link_button("📄 GitHub run log (text output)", msg, width="stretch")
                     st.caption("The 🔴 Live run panel below streams every answer as it's filled.")
                 elif "401" in msg or "Bad credentials" in msg:
@@ -1561,6 +1574,22 @@ with tab_autoapply:
                         language="toml")
                 st.caption("Save, wait for the app to reboot, then press **Test GitHub connection**. "
                            "Common cause of 401: the token expired, or a character was missed when copying.")
+        # --- WATCH IT LIVE IN A CODESPACE (a real visible browser, in the cloud) ---
+        st.markdown("**🖥️ Want to actually watch a real browser do it?**")
+        st.caption("A GitHub Codespace runs a full desktop in the cloud (free tier). It opens a VISIBLE "
+                   "Chrome you watch in your browser — from your Mac or your phone — and you can click "
+                   "in and take over. Best way to see exactly what the agent does.")
+        st.link_button("🖥️ Open a Codespace to watch live",
+                       f"https://github.com/codespaces/new?repo={_repo}&ref=main", width="stretch")
+        with st.expander("How to watch in the Codespace (3 steps)"):
+            st.markdown(
+                "1. Click the button above and let the Codespace build (first time takes a few minutes)\n"
+                "2. In its terminal run:")
+            st.code("./scripts/watch_apply.sh --from-queue", language="bash")
+            st.markdown("3. Open the **PORTS** tab → port **6080** → *Open in Browser* — password `vscode`.\n\n"
+                        "You'll see the real Chrome filling your queued applications, and you can click "
+                        "straight into it to finish anything yourself.")
+
         with st.expander("Prefer to run it on your laptop instead?"):
             st.code("python scripts/auto_apply.py --from-queue", language="bash")
             st.caption("Opens a visible browser you can watch and solve CAPTCHAs in. The cloud run above "

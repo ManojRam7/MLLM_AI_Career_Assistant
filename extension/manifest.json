@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Job Application Autofill (Manoj)",
+  "version": "1.0.0",
+  "description": "One click fills any job application form from your applicant profile — works on Workday, iCIMS, Greenhouse, Lever, LinkedIn, anywhere, because it runs in your own signed-in browser.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_title": "Fill this application",
+    "default_popup": "popup.html"
+  },
+  "web_accessible_resources": [
+    { "resources": ["profile.json"], "matches": ["<all_urls>"] }
+  ]
+}

@@ -436,10 +436,18 @@ class Store:
             "FROM jobs WHERE recommendations IS NOT NULL OR cv_keywords IS NOT NULL "
             "ORDER BY (bucket_tier='top100') DESC, in_bucket DESC, fit_score DESC LIMIT %s", (limit,))
 
-    # known ATS / direct-employer hosts (auto-apply targets — NOT Indeed/LinkedIn aggregators)
-    _ATS_URL = (r"(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com|smartrecruiters\.com|"
-                r"workable\.com|recruitee\.com|eightfold\.ai|personio\.|teamtailor\.com|"
-                r"breezy\.hr|bamboohr\.com|icims\.com|higher\.gs\.com|wd\d+\.myworkdayjobs)")
+    # ATS hosts whose application form is a PLAIN PAGE the agent can actually fill end-to-end
+    # (no account, no login wall, no multi-step wizard).
+    _ATS_URL = (r"(greenhouse\.io|lever\.co|ashbyhq\.com|smartrecruiters\.com|"
+                r"workable\.com|recruitee\.com|personio\.|teamtailor\.com|"
+                r"breezy\.hr|bamboohr\.com|higher\.gs\.com)")
+
+    # ATS hosts that force you to CREATE AN ACCOUNT / SIGN IN before any form exists — Workday,
+    # iCIMS, Taleo, SuccessFactors, Eightfold. The agent can only ever see the job description on
+    # these, so they are deliberately kept OUT of the auto-apply queue (it would report filling a
+    # form it never reached). Apply to these yourself — the answer sheet is in the Apply Queue tab.
+    _ATS_LOGIN_WALLED = (r"(myworkdayjobs\.com|wd\d+\.myworkdayjobs|icims\.com|taleo\.net|"
+                         r"successfactors\.|eightfold\.ai|avature\.net|jobvite\.com)")
 
     _APPLIED_STATUSES = "('applied','interview','offer','rejected','assessment','assessment_cleared')"
 

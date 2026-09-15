@@ -245,7 +245,9 @@ apply:                           # Phase-1 auto-apply (direct-employer ATS only;
   enabled: true
   threshold: 85                  # only queue jobs scored >= this for auto-apply
   cv_dir: "data/cvs"             # the 9 role CVs (chosen per job by cv_match, never tailored)
-  hold_open_seconds: 120         # keep the CLOUD browser alive this long after a run so the live view
+  hold_open_seconds: 45          # keep the CLOUD browser alive this long after a run so the live view
+                                 # NOTE: Steel's free tier limits CONCURRENT sessions — a long hold plus
+                                 # a quick second run collides and the new session is refused. Keep short.
                                  # isn't already dead when you open it (and you can take over). 0 = off.
   pause_before_submit: true      # (kept) manual review flow when auto_submit is false
   auto_submit: false             # true = the AI fills EVERYTHING and clicks Submit; false = fills + pauses

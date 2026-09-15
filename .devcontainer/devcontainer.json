@@ -15,6 +15,7 @@
     "8501": { "label": "Streamlit app", "onAutoForward": "notify" }
   },
   "postCreateCommand": "pip install -r requirements.txt && pip install playwright && playwright install --with-deps chromium && chmod +x scripts/watch_apply.sh",
+  "postAttachCommand": "bash -lc 'echo; echo \"▶ Watch the auto-apply live:\"; echo \"   ./scripts/watch_apply.sh --from-queue\"; echo \"   then open the forwarded port 6080 (PORTS tab) — password: vscode\"; echo'",
   "remoteEnv": { "DISPLAY": ":1" },
   "customizations": {
     "vscode": { "extensions": ["ms-python.python"] }

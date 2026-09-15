@@ -552,7 +552,15 @@ def main() -> None:
                 browser = p.chromium.connect_over_cdp(f"{steel_session.websocket_url}&apiKey={steel_key}")
                 ctx = browser.contexts[0]          # Steel hands back a ready context
             except Exception as exc:
-                print(f"! Steel unavailable ({str(exc)[:120]}) — falling back to a local browser.")
+                # Log the REAL reason (e.g. free-tier concurrent-session limit, quota, bad key) so the
+                # app can show it instead of guessing "the key is missing".
+                _why = str(exc)[:220]
+                print(f"! Steel session could not start: {_why} — falling back to a local browser.")
+                try:
+                    store.log_apply_event(run_id=RUN_ID, kind="note", field="Steel unavailable",
+                                          answer=_why, origin="auto", ok=False)
+                except Exception:
+                    pass
                 use_steel = False
                 steel_client = steel_session = None
         if not use_steel:
@@ -715,6 +723,11 @@ def main() -> None:
                 outcome, head = "error", f"❌ Failed: {errored[:70]} (NOT applied)"
             elif blocked:
                 outcome, head = "needs_manual", "🔒 CAPTCHA — needs you to finish (NOT submitted)"
+            elif filled == 0:
+                # Never claim "filled" when we never reached a form. Workday/iCIMS/Taleo put the form
+                # behind an account + login, so the agent only ever sees the job description.
+                outcome, head = "no_form", ("🚪 Couldn't reach an application form — this ATS needs a "
+                                            "login/account (Workday & co). NOTHING was filled or sent")
             elif submitted:
                 outcome, head = "submitted", "✅ Submitted"
             elif not do_submit and interactive:
