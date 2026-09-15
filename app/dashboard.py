@@ -1295,6 +1295,16 @@ with tab_autoapply:
         except Exception as exc:
             return False, str(exc)[:140]
 
+    def _release_queued(S):
+        """Release staged jobs to the watcher. Falls back to raw SQL so a cached/older Store object
+        (Streamlit keeps @cache_resource instances across code updates) can't break the Run button."""
+        try:
+            return S.release_queued()
+        except AttributeError:
+            with S.conn.cursor() as cur:
+                cur.execute("UPDATE apply_requests SET status='ready' WHERE status='queued'")
+                return cur.rowcount or 0
+
     _tok, _repo = _gh()
     try:
         S = get_store(url)
@@ -1311,8 +1321,15 @@ with tab_autoapply:
         c1, c2 = st.columns([3, 1])
         thr = c1.slider("Minimum fit score", 0, 100,
                         int(cfg.settings.get("apply", {}).get("threshold", 75)), 5, key="aa_thr")
-        if c2.button("🔄 Refresh", width="stretch", key="aa_refresh"):
-            st.cache_data.clear(); _rr()
+        if c2.button("🔄 Refresh", width="stretch", key="aa_refresh",
+                     help="Reload jobs AND drop cached connections (fixes 'Store has no attribute …' "
+                          "after an update)"):
+            st.cache_data.clear()
+            try:
+                st.cache_resource.clear()       # forces a fresh Store built from the current code
+            except Exception:
+                pass
+            _rr()
 
         try:
             scored = S.apply_queue(min_score=thr, limit=100)
@@ -1379,7 +1396,7 @@ with tab_autoapply:
                          disabled=(n_q == 0), key="aa_run_live"):
                 # Queueing alone does NOT start anything — this releases the jobs to the watcher.
                 try:
-                    n_rel = S.release_queued()
+                    n_rel = _release_queued(S)
                     st.success(f"Released {n_rel} job(s) — your Codespace starts within ~15s. "
                                "Watch below; it runs in slow motion and pauses on the filled form "
                                "so you can take over.")
