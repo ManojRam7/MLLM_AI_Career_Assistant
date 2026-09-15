@@ -1363,7 +1363,10 @@ with tab_autoapply:
         cs_name = (cs or "").strip().replace("https://", "").split(".")[0].replace("-6080", "")
         if cs_name:
             st.session_state["aa_cs_saved"] = cs_name
-        watch_url = f"https://{cs_name}-6080.app.github.dev" if cs_name else ""
+        # noVNC params: connect straight away, scale to fit, and reconnect if the run restarts —
+        # so the viewer shows the desktop instead of a "Connect" button.
+        watch_url = (f"https://{cs_name}-6080.app.github.dev/vnc.html"
+                     "?autoconnect=1&resize=scale&reconnect=1&show_dot=1") if cs_name else ""
 
         if not cs_name:
             st.link_button("🖥️ Create your Codespace (one time)",
@@ -1374,15 +1377,19 @@ with tab_autoapply:
             b1, b2 = st.columns(2)
             if b1.button("▶ Run & watch live", type="primary", width="stretch",
                          disabled=(n_q == 0), key="aa_run_live"):
-                st.session_state["aa_watch"] = True
-                st.info("Open your Codespace terminal and run the command below — the browser appears "
-                        "in the viewer underneath.")
-            b2.link_button("Open Codespace", f"https://github.com/codespaces", width="stretch")
-            st.code("./scripts/watch_apply.sh --from-queue", language="bash")
+                st.success(f"{n_q} job(s) queued — your Codespace picks them up within ~15s. "
+                           "Watch it happen below.")
+            b2.link_button("Open Codespace", "https://github.com/codespaces", width="stretch")
+            st.caption("Your Codespace runs a watcher that applies to anything you queue, automatically. "
+                       "If it's not running, open the Codespace terminal and start it:")
+            with st.expander("Start the watcher manually"):
+                st.code("./scripts/queue_watcher.sh", language="bash")
+                st.caption("Or apply once, right now:  `./scripts/watch_apply.sh --from-queue`")
             st.markdown("**Live browser**")
             _iframe(watch_url, height=640, scrolling=True)
-            st.caption(f"Viewer: {watch_url} · password `vscode`. If it's blank, make port **6080** "
-                       "**Public** in the Codespace PORTS tab (right-click → Port Visibility).")
+            st.caption("No password needed — it connects automatically. If it stays blank, check port "
+                       "**6080** is **Public** in the Codespace PORTS tab, and that the Codespace is "
+                       "still running (they stop after ~30 min idle).")
 
         with st.expander("No Codespace? Run it headless in GitHub Actions instead"):
             lim = st.number_input("How many this run", 1, 50, min(10, max(1, n_q or 10)), key="aa_lim")
