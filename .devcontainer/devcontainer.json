@@ -11,7 +11,11 @@
   },
   "forwardPorts": [6080, 8501],
   "portsAttributes": {
-    "6080": { "label": "🖥️ Watch the browser (noVNC)", "onAutoForward": "notify" },
+    "6080": {
+      "label": "🖥️ Watch the browser (noVNC)",
+      "onAutoForward": "notify",
+      "visibility": "public"
+    },
     "8501": { "label": "Streamlit app", "onAutoForward": "notify" }
   },
   "postCreateCommand": "pip install -r requirements.txt && pip install playwright && playwright install --with-deps chromium && chmod +x scripts/watch_apply.sh",

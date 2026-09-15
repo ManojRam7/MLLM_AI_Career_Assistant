@@ -25,5 +25,3 @@ altair>=5.0                # coloured, value-labelled charts (bundled with strea
 # Optional extras (only if you enable them) — LOCAL ONLY, not needed by the Actions pipeline
 # playwright>=1.44          # scripts/auto_apply.py semi-auto apply agent (run: playwright install chromium)
 
-# Cloud browser with a LIVE session viewer (watch the auto-apply from any device)
-steel-sdk>=0.1

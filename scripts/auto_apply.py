@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
-_VERSION = "v6.2 (cloud runs are watchable: step screenshots + video)"
+_VERSION = "v7.0 (Codespaces live browser; Steel removed)"
 # Groups this run's step screenshots together (GitHub run id in the cloud, timestamp locally).
 RUN_ID = _os.environ.get("GITHUB_RUN_ID") or dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -423,8 +423,6 @@ def main() -> None:
     ap.add_argument("--hold", type=int, default=None,
                     help="seconds to keep the cloud browser alive after the run so you can watch / take "
                          "over (default 120 in the cloud; 0 disables)")
-    ap.add_argument("--local-browser", dest="local_browser", action="store_true",
-                    help="force a local Chrome even if STEEL_API_KEY is set (no live viewer)")
     ap.add_argument("--ci", action="store_true",
                     help="cloud/unattended mode: never wait for keyboard input; CAPTCHA-blocked forms are "
                          "flagged 'needs_manual' instead of pausing")
@@ -514,65 +512,22 @@ def main() -> None:
         store.close(); return
 
     with sync_playwright() as p:
-        # ---------------------------------------------------------------- browser: Steel or local
-        # With a STEEL_API_KEY we drive a CLOUD browser and get a LIVE VIEWER URL — open it on your
-        # phone or Mac and watch the form being filled in real time. Otherwise launch Chrome locally.
-        steel_key = _os.environ.get("STEEL_API_KEY", "")
-        use_steel = bool(steel_key) and not args.local_browser
-        steel_client = steel_session = None
-        live_url = ""
-        if use_steel:
-            try:
-                from steel import Steel
-                steel_client = Steel(steel_api_key=steel_key)
-                # NOTE: solve_captcha intentionally NOT enabled — CAPTCHAs are left for you.
-                steel_session = steel_client.sessions.create()
-                # The EMBEDDABLE, no-login viewer is the session's debug URL (app.steel.dev/sessions/…
-                # is the dashboard and requires a Steel login, so it can't be embedded).
-                live_url = getattr(steel_session, "debug_url", "") or ""
-                if not live_url:
-                    try:
-                        _dbg = steel_client.sessions.debug(steel_session.id)
-                        live_url = (getattr(_dbg, "debugger_fullscreen_url", "")
-                                    or getattr(_dbg, "debuggerFullscreenUrl", "")
-                                    or getattr(_dbg, "debugger_url", "") or "")
-                    except Exception:
-                        live_url = ""
-                if live_url:                       # interactive = you can take over mid-run
-                    sep = "&" if "?" in live_url else "?"
-                    live_url = f"{live_url}{sep}interactive=true&showControls=true"
-                dash_url = f"https://app.steel.dev/sessions/{steel_session.id}"
-                print("\n" + "=" * 68)
-                print(f"📺  WATCH IT LIVE:  {live_url or dash_url}")
-                print(f"    (dashboard/replay: {dash_url})")
-                print("=" * 68 + "\n")
-                live_url = live_url or dash_url
-                store.log_apply_event(run_id=RUN_ID, kind="live_view", field="Watch live",
-                                      answer=live_url, origin="auto")
-                browser = p.chromium.connect_over_cdp(f"{steel_session.websocket_url}&apiKey={steel_key}")
-                ctx = browser.contexts[0]          # Steel hands back a ready context
-            except Exception as exc:
-                # Log the REAL reason (e.g. free-tier concurrent-session limit, quota, bad key) so the
-                # app can show it instead of guessing "the key is missing".
-                _why = str(exc)[:220]
-                print(f"! Steel session could not start: {_why} — falling back to a local browser.")
-                try:
-                    store.log_apply_event(run_id=RUN_ID, kind="note", field="Steel unavailable",
-                                          answer=_why, origin="auto", ok=False)
-                except Exception:
-                    pass
-                use_steel = False
-                steel_client = steel_session = None
-        if not use_steel:
-            browser = p.chromium.launch(headless=args.headless)
-            _vid_dir = pathlib.Path(cfg.path("output/apply_videos"))
-            _ctx_kw = {"accept_downloads": True, "viewport": {"width": 1440, "height": 1000}}
-            if not interactive:                    # record video so an unattended run is watchable back
-                _vid_dir.mkdir(parents=True, exist_ok=True)
-                _ctx_kw["record_video_dir"] = str(_vid_dir)
-                _ctx_kw["record_video_size"] = {"width": 1440, "height": 1000}
-                print(f"Recording video of this run -> {_vid_dir}")
-            ctx = browser.new_context(**_ctx_kw)
+        # ------------------------------------------------------------------------------ browser
+        # ONE browser path: a real Chromium. In a Codespace (DISPLAY set) it is VISIBLE, so you can
+        # watch every keystroke on the noVNC desktop and take over. In GitHub Actions it is headless
+        # and we record a video + step screenshots instead.
+        headed = bool(_os.environ.get("DISPLAY")) and not args.headless
+        browser = p.chromium.launch(headless=not headed)
+        _vid_dir = pathlib.Path(cfg.path("output/apply_videos"))
+        _ctx_kw = {"accept_downloads": True, "viewport": {"width": 1440, "height": 1000}}
+        if not headed:                             # record video so an unwatched run is reviewable
+            _vid_dir.mkdir(parents=True, exist_ok=True)
+            _ctx_kw["record_video_dir"] = str(_vid_dir)
+            _ctx_kw["record_video_size"] = {"width": 1440, "height": 1000}
+            print(f"Headless run — recording video to {_vid_dir}")
+        else:
+            print("👁  VISIBLE browser on the Codespace desktop — open the forwarded port 6080 to watch.")
+        ctx = browser.new_context(**_ctx_kw)
         for idx, job in enumerate(queue, 1):
             # recompute the CV from the live JD every time (never trust a stale/empty stored value —
             # e.g. a 'Data Analyst' role must get the Data Analyst CV, not the default ds-azure)
@@ -782,13 +737,12 @@ def main() -> None:
                 page.close()
             except Exception:
                 pass
-        # HOLD the cloud session open so the live view isn't already dead when you open it
-        # ("Browser Disconnected"). You can also take over in these seconds.
-        _hold = args.hold if args.hold is not None else int(acfg.get("hold_open_seconds", 120))
-        if use_steel and _hold > 0:
-            print(f"\n⏳ Holding the live browser open for {_hold}s so you can watch / take over…")
-            store.log_apply_event(run_id=RUN_ID, kind="note", field="Live session held open",
-                                  answer=f"{_hold}s — watch or take control now", origin="auto")
+        # In a Codespace, hold the VISIBLE browser open briefly so you can see the end state / take over.
+        _hold = args.hold if args.hold is not None else int(acfg.get("hold_open_seconds", 45))
+        if headed and _hold > 0:
+            print(f"\n⏳ Keeping the browser open for {_hold}s — take over on the desktop if you want…")
+            store.log_apply_event(run_id=RUN_ID, kind="note", field="Browser held open",
+                                  answer=f"{_hold}s — take control on the Codespace desktop", origin="auto")
             _t0 = time.time()
             while time.time() - _t0 < _hold:
                 time.sleep(5)
@@ -796,18 +750,10 @@ def main() -> None:
             browser.close()
         except Exception:
             pass
-        # Steel bills per session-minute — ALWAYS release, even if the run errored.
-        if steel_client is not None and steel_session is not None:
-            try:
-                steel_client.sessions.release(steel_session.id)
-                print("Steel session released.")
-            except Exception as exc:
-                print(f"! could not release Steel session: {str(exc)[:100]}")
     store.log_apply_event(run_id=RUN_ID, kind="run_end", field="finished",
                           answer=f"{len(queue)} application(s) processed", origin="auto")
     store.close(); trk.close()
-    if live_url:
-        print(f"\n📺 Session replay: {live_url}")
+    print("\nDone. Screenshots of every step are in the app → Auto-Apply → Activity.")
     print("\nDone. Dashboard → Apply Queue → Apply Activity for the log + screenshots.")
 
 

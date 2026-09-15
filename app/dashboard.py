@@ -1251,26 +1251,19 @@ with tab_apply:
                         st.caption("(screenshot could not be loaded)")
 
 
-# ---------------------------------------------------------------- AUTO-APPLY (control panel)
+# ================================================================= AUTO-APPLY
+# Three steps, nothing else: 1) choose  2) run & watch  3) status.
 with tab_autoapply:
-    import re as _re_aa
 
-    def _rerun_aa():
+    def _rr():
         try:
             st.rerun()
         except Exception:
             st.experimental_rerun()
 
-    st.subheader("🤖 Auto-Apply — runs in the cloud, no laptop needed")
-    st.caption("Pick scored jobs or paste any application URL, choose whether to auto-submit, press "
-               "**Queue**, then hit **Run now**. It applies on GitHub's servers — you can close this page. "
-               "Forms showing a CAPTCHA are flagged `needs_manual` for you to finish; everything else is "
-               "automatic. Works the same from your phone or Mac.")
-
-    # ---- GitHub Actions trigger (this is what makes it fully online) --------------------------
-    def _gh_conf():
-        """(token, repo) from Streamlit secrets / env. repo like 'ManojRam7/MLLM_AI_Career_Assistant'."""
-        tok = repo = ""
+    def _gh():
+        """(token, repo) for triggering workflows."""
+        tok = ""
         for k in ("GITHUB_TOKEN", "GH_TOKEN"):
             try:
                 tok = tok or str(st.secrets.get(k, "") or _os.environ.get(k, ""))
@@ -1282,486 +1275,217 @@ with tab_autoapply:
             repo = _os.environ.get("GITHUB_REPO", "")
         return tok, (repo or "ManojRam7/MLLM_AI_Career_Assistant")
 
-    def _gh_diagnose():
-        """Pinpoint WHY GitHub rejects us: bad token vs no repo access vs missing Actions permission."""
+    def _dispatch(wf, inputs):
         import requests as _rq
-        tok, repo = _gh_conf()
+        tok, repo = _gh()
         if not tok:
-            return "❌ No token found in secrets (`GITHUB_TOKEN`)."
-        hdr = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json",
-               "X-GitHub-Api-Version": "2022-11-28"}
-        notes = [f"Token length **{len(tok)}**, starts `{tok[:11]}…`", f"Repo: `{repo}`"]
-        if tok != tok.strip():
-            notes.append("⚠️ Token has leading/trailing whitespace — re-paste it.")
+            return False, "Add GITHUB_TOKEN to Streamlit secrets (see Setup below)."
         try:
-            u = _rq.get("https://api.github.com/user", headers=hdr, timeout=20)
-        except Exception as exc:
-            return "\n\n".join(notes + [f"❌ Network error: {str(exc)[:120]}"])
-        if u.status_code == 401:
-            return "\n\n".join(notes + [
-                "❌ **The token itself is invalid** (401 Bad credentials). Usually: it expired, it was "
-                "revoked, or only part of it got pasted. Generate a NEW fine-grained token and paste the "
-                "whole `github_pat_…` value into Streamlit secrets."])
-        if u.status_code != 200:
-            return "\n\n".join(notes + [f"❌ /user returned HTTP {u.status_code}: {u.text[:140]}"])
-        notes.append(f"✅ Token is valid — authenticated as **{u.json().get('login','?')}**")
-        r = _rq.get(f"https://api.github.com/repos/{repo}", headers=hdr, timeout=20)
-        if r.status_code != 200:
-            return "\n\n".join(notes + [
-                f"❌ Can't see `{repo}` (HTTP {r.status_code}). On a fine-grained token set "
-                "**Repository access → Only select repositories → this repo**."])
-        notes.append("✅ Repo access OK")
-        w = _rq.get(f"https://api.github.com/repos/{repo}/actions/workflows", headers=hdr, timeout=20)
-        if w.status_code != 200:
-            return "\n\n".join(notes + [
-                f"❌ No Actions access (HTTP {w.status_code}). Add permission "
-                "**Repository → Actions → Read and write**."])
-        names = [x.get("path", "") for x in w.json().get("workflows", [])]
-        notes.append(f"✅ Actions access OK — {len(names)} workflow(s) visible")
-        for need in ("apply.yml", "search.yml"):
-            notes.append((" ✅ " if any(need in n for n in names) else " ❌ ") +
-                         f"`{need}` {'found' if any(need in n for n in names) else 'NOT found on main — push it'}")
-        return "\n\n".join(notes)
-
-    def _trigger_workflow(wf_file: str, inputs: dict):
-        """Fire a workflow_dispatch. Returns (ok, message)."""
-        import requests as _rq
-        tok, repo = _gh_conf()
-        if not tok:
-            return False, "no-token"
-        try:
-            r = _rq.post(
-                f"https://api.github.com/repos/{repo}/actions/workflows/{wf_file}/dispatches",
-                headers={"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json",
-                         "X-GitHub-Api-Version": "2022-11-28"},
-                json={"ref": "main", "inputs": {k: str(v).lower() if isinstance(v, bool) else str(v)
-                                                for k, v in inputs.items()}}, timeout=25)
+            r = _rq.post(f"https://api.github.com/repos/{repo}/actions/workflows/{wf}/dispatches",
+                         headers={"Authorization": f"Bearer {tok}",
+                                  "Accept": "application/vnd.github+json"},
+                         json={"ref": "main",
+                               "inputs": {k: str(v).lower() if isinstance(v, bool) else str(v)
+                                          for k, v in inputs.items()}}, timeout=25)
             if r.status_code == 204:
-                # give GitHub a moment to create the run, then link to THAT run (not the workflow list)
-                import time as _t
-                for _ in range(6):
-                    _t.sleep(2)
-                    rr = _rq.get(f"https://api.github.com/repos/{repo}/actions/workflows/{wf_file}/runs"
-                                 "?per_page=1", headers={"Authorization": f"Bearer {tok}",
-                                                         "Accept": "application/vnd.github+json"}, timeout=20)
-                    if rr.status_code == 200:
-                        runs = rr.json().get("workflow_runs") or []
-                        if runs:
-                            return True, runs[0].get("html_url") or ""
-                return True, f"https://github.com/{repo}/actions/workflows/{wf_file}"
-            return False, f"HTTP {r.status_code}: {r.text[:180]}"
+                return True, f"https://github.com/{repo}/actions"
+            if r.status_code == 401:
+                return False, "GitHub rejected the token (401) — it's expired or mistyped."
+            return False, f"HTTP {r.status_code}: {r.text[:140]}"
         except Exception as exc:
-            return False, str(exc)[:180]
+            return False, str(exc)[:140]
 
-    _aacfg = cfg.settings.get("apply", {})
-    _aathr_default = int(_aacfg.get("threshold", 85))
+    _tok, _repo = _gh()
     try:
-        _store_aa = get_store(url)
+        S = get_store(url)
     except Exception as _e:
-        _store_aa = None
-        st.error(f"Database not reachable: {str(_e)[:160]}")
+        S = None
+        st.error(f"Database unreachable: {str(_e)[:140]}")
 
-    if _store_aa is not None:
-        # ---- 1) threshold + pick from scored queue -------------------------------------------
-        _rc1, _rc2 = st.columns([3, 1])
-        thr_aa = _rc1.slider("Minimum fit score to show", 0, 100, _aathr_default, 5, key="aa_thr")
-        if _rc2.button("🔄 Refresh jobs", width="stretch", key="aa_refresh_jobs",
-                       help="Pull the newest jobs from the database (after a search run finishes)"):
-            st.cache_data.clear()
-            _rerun_aa()
+    st.subheader("🤖 Auto-Apply")
+    st.caption("Queue the jobs you want, then watch a real browser fill them in the cloud.")
+
+    if S is not None:
+        # ---------------------------------------------------------------- STEP 1 · choose
+        st.markdown("### 1 · Choose what to apply to")
+        c1, c2 = st.columns([3, 1])
+        thr = c1.slider("Minimum fit score", 0, 100,
+                        int(cfg.settings.get("apply", {}).get("threshold", 75)), 5, key="aa_thr")
+        if c2.button("🔄 Refresh", width="stretch", key="aa_refresh"):
+            st.cache_data.clear(); _rr()
+
         try:
-            scored = _store_aa.apply_queue(min_score=thr_aa, limit=100)
-            try:                                # show how fresh the list is
-                _fresh = _store_aa._rows(
-                    "SELECT max(first_seen_at) AS newest, count(*) AS n FROM jobs "
-                    "WHERE first_seen_at > now() - interval '24 hours'")
-                if _fresh and _fresh[0].get("n"):
-                    st.caption(f"🆕 {_fresh[0]['n']} job(s) added in the last 24h · newest "
-                               f"{str(_fresh[0].get('newest'))[:16]}. "
-                               "The list below is read live from the database on every refresh.")
-            except Exception:
-                pass
+            scored = S.apply_queue(min_score=thr, limit=100)
         except Exception as _e:
-            scored = []
-            st.warning(f"Couldn't load scored queue: {str(_e)[:140]}")
-        opt_map = {}
-        for r in scored:
-            lbl = f"{int(r.get('fit_score') or 0):>3} · {(r.get('title') or '')[:44]} — {(r.get('company') or '')[:22]}"
-            opt_map[lbl] = r
-        picked = st.multiselect(
-            f"Scored direct-ATS roles ≥ {thr_aa}  ({len(scored)} available)",
-            list(opt_map.keys()), key="aa_pick",
-            help="These are high-fit jobs on real company ATS sites (Greenhouse/Lever/Ashby/Workday…).")
+            scored, _ = [], st.warning(f"Couldn't load jobs: {str(_e)[:120]}")
+        opts = {f"{int(r.get('fit_score') or 0)} · {(r.get('title') or '')[:46]} — "
+                f"{(r.get('company') or '')[:22]}": r for r in scored}
+        picked = st.multiselect(f"Jobs the agent can fill end-to-end ({len(scored)} at ≥{thr})",
+                                list(opts), key="aa_pick")
         if not scored:
-            # explain an empty dropdown instead of leaving it mysterious
+            st.info("Nothing here yet. Lower the score, run a search (bottom of this page), or paste a "
+                    "URL below. Note: Workday / iCIMS / Taleo are excluded — they need a login, so use "
+                    "the Chrome extension for those.")
+
+        pasted = [u.strip() for u in (st.text_area(
+            "…or paste application URLs (one per line)", height=90, key="aa_paste",
+            placeholder="https://jobs.lever.co/…\nhttps://boards.greenhouse.io/…") or "").splitlines()
+            if u.strip().lower().startswith("http")]
+
+        submit_batch = st.toggle("Auto-submit after filling", value=False, key="aa_submit",
+                                 help="OFF = fill only, you press Submit yourself while watching.")
+        n_sel = len(picked) + len(pasted)
+        if st.button(f"➕ Queue {n_sel} job(s)", type="primary", width="stretch",
+                     disabled=(n_sel == 0), key="aa_queue"):
+            items = [{"url": opts[l].get("url", ""), "title": opts[l].get("title", ""),
+                      "company": opts[l].get("company", ""), "source": "queue",
+                      "auto_submit": submit_batch} for l in picked]
+            items += [{"url": u, "source": "pasted", "auto_submit": submit_batch} for u in pasted]
             try:
-                _s_aa, _top_aa = _store_aa.apply_stats(thr=thr_aa)
-                _ats = int(_s_aa.get("ats_thr", 0))          # direct-ATS roles at this threshold
-                _app = int(_s_aa.get("applied_thr", 0))      # …already applied
-                _nt = int(_s_aa.get("nontarget_thr", 0))     # …not a target role
-                _agg = int(_s_aa.get("agg_thr", 0))          # high-fit but stuck on LinkedIn/Indeed
-                _why = []
-                if _app:
-                    _why.append(f"{_app} already applied")
-                if _nt:
-                    _why.append(f"{_nt} not a target role")
-                st.info(
-                    f"**0 to apply to at ≥ {thr_aa}.** You have **{_ats}** direct-employer ATS role(s) at "
-                    f"that score" + (f" — but {' and '.join(_why)}." if _why else ".") +
-                    (f"  Another **{_agg}** high-fit role(s) sit on LinkedIn/Indeed URLs, which can't be "
-                     f"auto-filled." if _agg else "") +
-                    f"  (Across all scores you have {_s_aa.get('ats_total', 0)} direct-ATS roles.)  "
-                    "→ Lower the slider, **run an ATS search below** to find more direct-employer jobs, "
-                    "or paste an application URL.")
-            except Exception:
-                st.info(f"No scored direct-ATS roles at ≥ {thr_aa}. Lower the slider, run a search below, "
-                        "or paste an application URL directly.")
-
-        # ---- 2) paste any URLs ---------------------------------------------------------------
-        pasted_raw = st.text_area(
-            "…or paste application URLs (one per line)", height=110, key="aa_paste",
-            placeholder="https://jobs.lever.co/acme/....\nhttps://boards.greenhouse.io/acme/jobs/....")
-        pasted_urls = [u.strip() for u in (pasted_raw or "").splitlines()
-                       if u.strip().lower().startswith("http")]
-
-        # ---- 3) one submit setting for this batch --------------------------------------------
-        auto_submit_batch = st.toggle(
-            "Auto-submit after filling (off = fill and pause for my review)", value=False, key="aa_submit",
-            help="OFF is safest to start: the applier fills everything and waits so you can check and submit "
-                 "yourself. Turn ON once you trust it.")
-
-        n_sel = len(picked) + len(pasted_urls)
-        st.markdown(f"**{n_sel}** URL(s) selected · submit = **{'AUTO' if auto_submit_batch else 'review first'}**")
-
-        cta1, cta2 = st.columns([2, 1])
-        if cta1.button("➕ Queue these for applying", type="primary", width="stretch",
-                       disabled=(n_sel == 0), key="aa_queue_btn"):
-            items = []
-            for lbl in picked:
-                r = opt_map[lbl]
-                items.append({"url": r.get("url", ""), "title": r.get("title", ""),
-                              "company": r.get("company", ""), "source": "queue",
-                              "auto_submit": auto_submit_batch})
-            for u in pasted_urls:
-                items.append({"url": u, "title": "", "company": "", "source": "pasted",
-                              "auto_submit": auto_submit_batch})
-            try:
-                added = _store_aa.add_apply_requests(items)
-                st.success(f"Queued {added} URL(s). Now press **▶ Run Auto-Apply in the cloud** below.")
-                _rerun_aa()
+                st.success(f"Queued {S.add_apply_requests(items)} job(s)."); _rr()
             except Exception as _e:
-                st.error(f"Could not queue: {str(_e)[:160]}")
-        if cta2.button("🧹 Clear finished", width="stretch", key="aa_clear_done"):
-            try:
-                _store_aa.clear_apply_requests("done"); _rerun_aa()
-            except Exception:
-                pass
+                st.error(str(_e)[:160])
 
-        # ---- 4) RUN IT IN THE CLOUD ----------------------------------------------------------
+        try:
+            n_q = len(S.apply_requests("queued", limit=200))
+        except Exception:
+            n_q = 0
+
+        # ---------------------------------------------------------------- STEP 2 · run & watch
         st.divider()
-        st.markdown("### ▶ Run it now (in the cloud)")
-        _tok, _repo = _gh_conf()
-        n_queued = 0
-        try:
-            n_queued = len(_store_aa.apply_requests("queued", limit=200))
-        except Exception:
-            pass
-        run_limit = st.number_input("How many applications this run", 1, 50, min(10, max(1, n_queued or 10)),
-                                    key="aa_run_limit")
-        st.caption(f"{n_queued} URL(s) currently waiting in the queue.")
-        # Did the LAST run actually get a Steel live browser? Tells you if the GitHub secret is set.
-        try:
-            _last = _store_aa.apply_event_runs(limit=1)
-            _had_live = False
-            if _last:
-                _had_live = any(e.get("kind") == "live_view"
-                                for e in _store_aa.apply_events(_last[0]["run_id"]))
-            if _last and _had_live:
-                st.success("📺 Live browser **enabled** — your last run streamed a Steel session.")
-            elif _last:
-                st.warning("📺 Live browser **not active** on the last run. Add `STEEL_API_KEY` to the "
-                           "**GitHub repo** secrets (Settings → Secrets and variables → Actions) — the "
-                           "Streamlit secret isn't visible to the workflow.")
-        except Exception:
-            pass
-        if not _tok:
-            st.warning("To run in the cloud, add a GitHub token so this page can start the workflow.")
-            with st.expander("How to set it up (2 minutes)"):
-                st.markdown(
-                    "1. GitHub → **Settings → Developer settings → Personal access tokens → "
-                    "Fine-grained tokens → Generate new token**\n"
-                    f"2. Repository access: only **{_repo}**\n"
-                    "3. Permissions → Repository → **Actions: Read and write**\n"
-                    "4. Copy the token, then in **Streamlit Cloud → your app → Settings → Secrets** add:")
-                st.code(f'GITHUB_TOKEN = "github_pat_..."\nGITHUB_REPO = "{_repo}"', language="toml")
-                st.caption("Then reload this page — the Run button goes live.")
+        st.markdown("### 2 · Run it & watch live")
+        st.caption(f"{n_q} job(s) waiting in the queue.")
+
+        cs = st.text_input("Your Codespace name or URL", key="aa_cs",
+                           value=str(st.session_state.get("aa_cs_saved", "")),
+                           placeholder="e.g. glorious-space-guide-abc123",
+                           help="Create one from the button below, then paste its name here once.")
+        cs_name = (cs or "").strip().replace("https://", "").split(".")[0].replace("-6080", "")
+        if cs_name:
+            st.session_state["aa_cs_saved"] = cs_name
+        watch_url = f"https://{cs_name}-6080.app.github.dev" if cs_name else ""
+
+        if not cs_name:
+            st.link_button("🖥️ Create your Codespace (one time)",
+                           f"https://github.com/codespaces/new?repo={_repo}&ref=main", width="stretch")
+            st.caption("Create it once, copy its name from the URL, paste it above — then this page can "
+                       "show the live browser inline every time.")
         else:
-            if st.button("🚀 Run Auto-Apply in the cloud", type="primary", width="stretch",
-                         disabled=(n_queued == 0), key="aa_run_cloud"):
-                # Mark where the event log is NOW, so we only accept the live view from THIS run
-                # (otherwise we'd show a stale URL from a finished session = "Browser Disconnected").
-                try:
-                    _since_id = _store_aa.latest_event_id()
-                except Exception:
-                    _since_id = 0
-                ok, msg = _trigger_workflow("apply.yml", {
-                    "limit": int(run_limit), "source": "queued-urls",
-                    "submit": bool(auto_submit_batch), "min_score": int(thr_aa)})
-                if ok:
-                    st.success("Started in the cloud.")
-                    # Wait for the Steel LIVE viewer URL, then show it as the main thing (not GitHub).
-                    _live_now, _ph = "", st.empty()
-                    import time as _t2
-                    for _i in range(40):                      # up to ~2min (runner boots + installs deps)
-                        try:
-                            _lv = _store_aa.latest_live_view(after_id=_since_id)   # THIS run only
-                            if _lv and _lv.get("url"):
-                                _live_now = _lv["url"]
-                                break
-                        except Exception:
-                            pass
-                        _ph.caption(f"⏳ Waiting for THIS run's live browser… {(_i + 1) * 3}s "
-                                    "(GitHub is booting the runner and installing dependencies)")
-                        _t2.sleep(3)
-                    _ph.empty()
-                    if _live_now:
-                        st.markdown("### 📺 Watch it live")
-                        st.caption("You can **click straight into the browser below and take over** — "
-                                   "handy for solving a CAPTCHA or picking the location from its dropdown. "
-                                   "Whatever you do affects the real session.")
-                        st.link_button("Open the live browser (full screen)", _live_now, width="stretch")
-                        _iframe(_live_now, height=620, scrolling=True)
-                    else:
-                        # Show the REAL reason if the runner logged one (quota, concurrency, bad key…)
-                        _why = ""
-                        try:
-                            for _e3 in (_store_aa.apply_events(
-                                    (_store_aa.apply_event_runs(limit=1) or [{}])[0].get("run_id", "")) or []):
-                                if _e3.get("field") == "Steel unavailable":
-                                    _why = _e3.get("answer", "")
-                        except Exception:
-                            pass
-                        if _why:
-                            st.error(f"Steel refused the session: **{_why}**\n\nCommon cause: the free tier "
-                                     "allows one session at a time and a previous one is still open — wait "
-                                     "for it to finish/release, then run again.")
-                        else:
-                            st.warning(
-                                "No live browser session appeared within 2 minutes. Either the runner is "
-                                "still installing, or `STEEL_API_KEY` isn't in your **GitHub repo** secrets "
-                                "(a Streamlit secret is not visible to the workflow). "
-                                "The run still applies — headless, with screenshots.")
-                    st.link_button("📄 GitHub run log (text output)", msg, width="stretch")
-                    st.caption("The 🔴 Live run panel below streams every answer as it's filled.")
-                elif "401" in msg or "Bad credentials" in msg:
-                    st.error("**GitHub rejected the token (401 Bad credentials).** The token is invalid, "
-                             "expired, or was only partly pasted — it's not a permissions problem. "
-                             "Generate a fresh fine-grained token and paste the whole value.")
-                else:
-                    st.error(f"Could not start the run: {msg}")
-            if st.button("🔧 Test GitHub connection", width="stretch", key="aa_gh_test"):
-                with st.spinner("Checking token, repo access and workflows…"):
-                    st.info(_gh_diagnose())
-            with st.expander("Fix a rejected token (step by step)"):
-                st.markdown(
-                    "1. GitHub → **Settings → Developer settings → Personal access tokens → "
-                    "Fine-grained tokens → Generate new token**\n"
-                    f"2. **Repository access → Only select repositories → `{_repo}`**\n"
-                    "3. **Permissions → Repository → Actions → Read and write**\n"
-                    "4. Generate, then **copy the full `github_pat_…` string** (it's shown once)\n"
-                    "5. Streamlit Cloud → your app → **Settings → Secrets** → paste:")
-                st.code(f'GITHUB_TOKEN = "github_pat_PASTE_WHOLE_VALUE"\nGITHUB_REPO  = "{_repo}"',
-                        language="toml")
-                st.caption("Save, wait for the app to reboot, then press **Test GitHub connection**. "
-                           "Common cause of 401: the token expired, or a character was missed when copying.")
-        # --- WATCH IT LIVE IN A CODESPACE (a real visible browser, in the cloud) ---
-        st.markdown("**🖥️ Want to actually watch a real browser do it?**")
-        st.caption("A GitHub Codespace runs a full desktop in the cloud (free tier). It opens a VISIBLE "
-                   "Chrome you watch in your browser — from your Mac or your phone — and you can click "
-                   "in and take over. Best way to see exactly what the agent does.")
-        st.link_button("🖥️ Open a Codespace to watch live",
-                       f"https://github.com/codespaces/new?repo={_repo}&ref=main", width="stretch")
-        with st.expander("How to watch in the Codespace (3 steps)"):
-            st.markdown(
-                "1. Click the button above and let the Codespace build (first time takes a few minutes)\n"
-                "2. In its terminal run:")
+            b1, b2 = st.columns(2)
+            if b1.button("▶ Run & watch live", type="primary", width="stretch",
+                         disabled=(n_q == 0), key="aa_run_live"):
+                st.session_state["aa_watch"] = True
+                st.info("Open your Codespace terminal and run the command below — the browser appears "
+                        "in the viewer underneath.")
+            b2.link_button("Open Codespace", f"https://github.com/codespaces", width="stretch")
             st.code("./scripts/watch_apply.sh --from-queue", language="bash")
-            st.markdown("3. Open the **PORTS** tab → port **6080** → *Open in Browser* — password `vscode`.\n\n"
-                        "You'll see the real Chrome filling your queued applications, and you can click "
-                        "straight into it to finish anything yourself.")
+            st.markdown("**Live browser**")
+            _iframe(watch_url, height=640, scrolling=True)
+            st.caption(f"Viewer: {watch_url} · password `vscode`. If it's blank, make port **6080** "
+                       "**Public** in the Codespace PORTS tab (right-click → Port Visibility).")
 
-        with st.expander("Prefer to run it on your laptop instead?"):
-            st.code("python scripts/auto_apply.py --from-queue", language="bash")
-            st.caption("Opens a visible browser you can watch and solve CAPTCHAs in. The cloud run above "
-                       "does the same thing unattended.")
+        with st.expander("No Codespace? Run it headless in GitHub Actions instead"):
+            lim = st.number_input("How many this run", 1, 50, min(10, max(1, n_q or 10)), key="aa_lim")
+            if st.button("Run headless (no live view)", width="stretch",
+                         disabled=(n_q == 0 or not _tok), key="aa_run_headless"):
+                ok, msg = _dispatch("apply.yml", {"limit": int(lim), "source": "queued-urls",
+                                                  "submit": bool(submit_batch), "min_score": int(thr)})
+                st.success(f"Started — [watch the log]({msg})") if ok else st.error(msg)
+            st.caption("Fills and screenshots everything, but you can't watch it happen.")
 
-        # ---- 4b) run a SEARCH in the cloud, by source, with its own threshold -----------------
+        # ---------------------------------------------------------------- STEP 3 · status
         st.divider()
-        st.markdown("### 🔎 Run a job search (by source)")
-        st.caption("Run one section of the search on demand with its own fit threshold — cheaper and "
-                   "faster than the full daily sweep. Runs in the cloud.")
-        _SRC_OPTS = {"Company ATS boards": "ats", "Adzuna (multi-country)": "adzuna", "Reed": "reed",
-                     "Bright Data / Google SERP": "brightdata"}
-        src_pick = st.multiselect("Sources", list(_SRC_OPTS.keys()), default=["Company ATS boards"],
-                                  key="aa_src_pick")
-        s1, s2 = st.columns(2)
-        src_fit = s1.slider("Alert fit threshold", 0, 100, 75, 5, key="aa_src_fit")
-        src_sector = s2.selectbox("Scope", ["full", "all", "auto"], index=0, key="aa_src_sector",
-                                  help="full = broad sweep · all = every bucket-list company · "
-                                       "auto = the sector for this hour")
-        if not _tok:
-            st.caption("Add the GitHub token above to enable cloud search runs.")
-        elif st.button("🔍 Run search in the cloud", width="stretch",
-                       disabled=(not src_pick), key="aa_run_search"):
-            ok, msg = _trigger_workflow("search.yml", {
-                "sources": ",".join(_SRC_OPTS[s] for s in src_pick),
-                "sector": src_sector, "min_fit": int(src_fit), "mode": "recurring"})
-            if ok:
-                st.success("Search started in the cloud. New jobs appear here once it finishes.")
-                st.link_button("📺 Watch the run", msg, width="stretch")
-            else:
-                st.error(f"Could not start the search: {msg}")
-
-        # ---- 4b2) LIVE RUN: the brain's decisions, field by field, as they happen -------------
-        st.divider()
-        st.markdown("### 🔴 Live run — what the brain is answering")
-        st.caption("Every field the agent fills is streamed here as it happens, with the answer it chose "
-                   "and whether it came from your profile or the AI. This is how you judge it.")
-
-        def _render_live(_store, _auto: bool):
-            try:
-                runs = _store.apply_event_runs(limit=15)
-            except Exception as _e:
-                st.warning(f"Live stream unavailable: {str(_e)[:120]}")
-                return
-            if not runs:
-                st.info("No runs yet. Trigger a cloud run above and this fills in live.")
-                return
-            rl = {f"{str(r['started_at'])[:16]} · run {r['run_id']} · {r['jobs']} job(s) · "
-                  f"{r['events']} events": r["run_id"] for r in runs}
-            pick = st.selectbox("Run", list(rl.keys()), key="aa_live_run")
-            rid = rl[pick]
-            try:
-                evs = _store.apply_events(rid)
-            except Exception:
-                evs = []
-            done = any(e["kind"] == "run_end" for e in evs)
-            st.markdown(("✅ **Finished**" if done else "🔴 **Running…**") + f" · {len(evs)} events")
-            # LIVE BROWSER: Steel gives a viewer URL — embed it so you literally watch the form fill
-            _live = next((e.get("answer") for e in evs if e.get("kind") == "live_view"), "")
-            if _live and done:
-                st.info("This run has finished, so its browser session is closed — the viewer will just "
-                        "say *Browser Disconnected*. Use the screenshots below to see what it did, or "
-                        "start a new run to watch one live.")
-            elif _live:
-                st.link_button("📺 Watch the browser live", _live, width="stretch")
-                with st.expander("Show the live browser here", expanded=True):
-                    _iframe(_live, height=620, scrolling=True)
-                    st.caption("If it doesn't load embedded, use the button above — some browsers block "
-                               "third-party iframes.")
-            cur_job = None
-            for e in evs:
-                k = e["kind"]
-                if k == "run_start":
-                    st.markdown(f"▶️ **Run started** — {e['answer']}")
-                elif k == "job_start":
-                    cur_job = e
-                    st.markdown(f"---\n**📄 {e.get('role_title') or 'Application'} — "
-                                f"{e.get('company') or ''}**  ·  CV: `{e.get('answer')}`")
-                elif k == "field":
-                    tag = "🧠 AI" if e.get("origin") == "ai" else "👤 profile"
-                    mark = "✅" if e.get("ok") else "⚠️"
-                    st.markdown(f"{mark} **{e.get('field','')}** → {e.get('answer','')}  \n"
-                                f"<span style='opacity:.6;font-size:.85em'>{tag}</span>",
-                                unsafe_allow_html=True)
-                elif k == "job_end":
-                    st.markdown(f"🏁 **{e.get('field','')}** → `{e.get('answer','')}`")
-                elif k == "run_end":
-                    st.markdown(f"✅ **Run finished** — {e.get('answer','')}")
-            if not done and _auto:
-                st.caption("Auto-refreshing every 3s…")
-
-        _auto_live = st.toggle("Auto-refresh while a run is in progress", value=True, key="aa_live_auto")
-        try:                                   # Streamlit >=1.37 can self-refresh a fragment
-            if _auto_live and hasattr(st, "fragment"):
-                st.fragment(run_every=3)(lambda: _render_live(_store_aa, True))()
-            else:
-                _render_live(_store_aa, False)
-                if st.button("🔄 Refresh live view", width="stretch", key="aa_live_refresh"):
-                    _rerun_aa()
-        except Exception:
-            _render_live(_store_aa, False)
-
-        # ---- 4c) WATCH IT BACK: screenshots of each cloud fill --------------------------------
-        st.divider()
-        st.markdown("### 🎬 Watch what the cloud run did")
-        st.caption("The cloud browser is headless, so every application is screenshotted at each stage — "
-                   "form opened → fields filled → submitted. Flip through them here, on phone or Mac. "
-                   "(A full video of the run is also attached to the Actions run as `apply-recording`.)")
+        st.markdown("### 3 · What happened")
         try:
-            _runs = _store_aa.apply_step_runs(limit=25)
-        except Exception:
-            _runs = []
-        if not _runs:
-            st.info("No recordings yet — they appear here after your next cloud run.")
-        else:
-            _rlbl = {}
-            for r in _runs:
-                when = str(r.get("finished_at") or "")[:16]
-                _rlbl[f"{when} · {(r.get('role_title') or 'Application')[:40]} — "
-                      f"{(r.get('company') or '')[:22]} ({r.get('steps', 0)} shots)"] = r
-            pick_run = st.selectbox("Application", list(_rlbl.keys()), key="aa_film_pick")
-            if pick_run:
-                _r = _rlbl[pick_run]
-                try:
-                    steps = _store_aa.apply_steps(_r["url"], _r.get("run_id") or "")
-                except Exception:
-                    steps = []
-                if steps:
-                    labels = [f"{s.get('label') or ('step ' + str(s.get('step_no')))}" for s in steps]
-                    idx = st.radio("Stage", range(len(steps)), format_func=lambda i: labels[i],
-                                   horizontal=True, key="aa_film_stage")
-                    s = steps[int(idx)]
-                    if s.get("note"):
-                        st.caption(s["note"])
-                    if s.get("has_shot"):
-                        try:
-                            img = _store_aa.apply_step_shot(int(s["id"]))
-                            if img:
-                                st.image(img, width="stretch")
-                        except Exception:
-                            st.caption("(screenshot could not be loaded)")
-                    st.caption(f"🔗 {_r['url']}")
-
-        # ---- 5) live status of the queue -----------------------------------------------------
-        st.divider()
-        st.markdown("**Queue status**")
-        try:
-            rows = _store_aa.apply_requests_rows(limit=200)
+            rows = S.apply_requests_rows(limit=100)
         except Exception:
             rows = []
         if not rows:
-            st.info("Nothing queued yet. Select or paste some URLs above and press Queue.")
+            st.info("Nothing queued yet.")
         else:
-            import pandas as _pd_aa
-            dfq = _pd_aa.DataFrame(rows)
-            _status_emoji = {"queued": "⏳ queued", "processing": "⚙️ applying…", "done": "✅ applied",
-                             "needs_submit": "📝 filled — submit it", "needs_manual": "🔒 CAPTCHA — finish it",
-                             "skipped": "⏭️ skipped", "error": "❌ error"}
-            dfq["status"] = dfq["status"].map(lambda s: _status_emoji.get(s, s))
-            show = dfq[["status", "title", "company", "source", "auto_submit", "url", "note"]].rename(
-                columns={"auto_submit": "auto?"})
-            st.dataframe(show, width="stretch", hide_index=True,
-                         height=min(len(show) * 35 + 40, 480))
-            cc1, cc2 = st.columns(2)
-            if cc1.button("🗑️ Clear pending (queued)", width="stretch", key="aa_clear_pending"):
-                try:
-                    _store_aa.clear_apply_requests("queued"); _rerun_aa()
-                except Exception:
-                    pass
-            if cc2.button("🧨 Clear ALL", width="stretch", key="aa_clear_all"):
-                try:
-                    _store_aa.clear_apply_requests("all"); _rerun_aa()
-                except Exception:
-                    pass
+            import pandas as _pd
+            EMO = {"queued": "⏳ queued", "processing": "⚙️ running", "done": "✅ submitted",
+                   "needs_submit": "📝 filled — submit it", "needs_manual": "🔒 CAPTCHA — finish it",
+                   "dead_link": "🔗 dead link", "error": "❌ error", "skipped": "⏭️ skipped"}
+            df = _pd.DataFrame(rows)
+            df["status"] = df["status"].map(lambda s: EMO.get(s, s))
+            st.dataframe(df[["status", "title", "company", "url", "note"]], hide_index=True,
+                         width="stretch", height=min(len(df) * 35 + 40, 360))
+            k1, k2 = st.columns(2)
+            if k1.button("🧹 Clear finished", width="stretch", key="aa_cf"):
+                S.clear_apply_requests("done"); _rr()
+            if k2.button("🗑️ Clear all", width="stretch", key="aa_ca"):
+                S.clear_apply_requests("all"); _rr()
+
+        with st.expander("🧠 What the agent answered (per field)"):
+            try:
+                runs = S.apply_event_runs(limit=10)
+            except Exception:
+                runs = []
+            if not runs:
+                st.caption("Nothing yet — run something first.")
+            else:
+                rl = {f"{str(r['started_at'])[:16]} · {r['jobs']} job(s)": r["run_id"] for r in runs}
+                rid = rl[st.selectbox("Run", list(rl), key="aa_ev_run")]
+                for e in (S.apply_events(rid) or []):
+                    if e["kind"] == "job_start":
+                        st.markdown(f"**📄 {e.get('role_title') or 'Application'} — {e.get('company','')}** "
+                                    f"· CV `{e.get('answer')}`")
+                    elif e["kind"] == "field":
+                        st.markdown(f"{'✅' if e.get('ok') else '⚠️'} **{e.get('field','')}** → "
+                                    f"{e.get('answer','')}  ·  "
+                                    f"*{'AI' if e.get('origin') == 'ai' else 'profile'}*")
+                    elif e["kind"] == "job_end":
+                        st.markdown(f"🏁 {e.get('field','')} → `{e.get('answer','')}`")
+
+        with st.expander("📸 Screenshots of each step"):
+            try:
+                shots = S.apply_step_runs(limit=20)
+            except Exception:
+                shots = []
+            if not shots:
+                st.caption("No screenshots yet.")
+            else:
+                sl = {f"{str(r.get('finished_at'))[:16]} · {(r.get('role_title') or '')[:38]} — "
+                      f"{(r.get('company') or '')[:20]}": r for r in shots}
+                sr = sl[st.selectbox("Application", list(sl), key="aa_shot_pick")]
+                steps = S.apply_steps(sr["url"], sr.get("run_id") or "")
+                if steps:
+                    i = st.radio("Stage", range(len(steps)), horizontal=True, key="aa_shot_stage",
+                                 format_func=lambda i: steps[i].get("label") or f"step {i+1}")
+                    stp = steps[int(i)]
+                    if stp.get("note"):
+                        st.caption(stp["note"])
+                    if stp.get("has_shot"):
+                        img = S.apply_step_shot(int(stp["id"]))
+                        if img:
+                            st.image(img, width="stretch")
+
+        # ---------------------------------------------------------------- extras (tucked away)
+        st.divider()
+        with st.expander("🔎 Run a job search (find more roles)"):
+            SRC = {"Company ATS boards": "ats", "Adzuna": "adzuna", "Reed": "reed",
+                   "Bright Data / Google": "brightdata"}
+            sp = st.multiselect("Sources", list(SRC), default=["Company ATS boards"], key="aa_src")
+            s1, s2 = st.columns(2)
+            sf = s1.slider("Alert threshold", 0, 100, 75, 5, key="aa_sfit")
+            sc = s2.selectbox("Scope", ["full", "all", "auto"], key="aa_scope")
+            if st.button("Run search in the cloud", width="stretch",
+                         disabled=(not sp or not _tok), key="aa_rs"):
+                ok, msg = _dispatch("search.yml", {"sources": ",".join(SRC[s] for s in sp),
+                                                   "sector": sc, "min_fit": int(sf), "mode": "recurring"})
+                st.success(f"Search started — [watch]({msg})") if ok else st.error(msg)
+
+        with st.expander("⚙️ Setup (one time)"):
+            st.markdown(
+                f"**GitHub token** (only needed for the headless Actions runs)\n\n"
+                f"Settings → Developer settings → Fine-grained tokens → repo `{_repo}` → "
+                "Permissions → Actions: **Read and write**. Then in Streamlit secrets:")
+            st.code(f'GITHUB_TOKEN = "github_pat_..."\nGITHUB_REPO  = "{_repo}"', language="toml")
+            st.markdown("**Codespace** — create once from the button in step 2, then in its PORTS tab "
+                        "right-click port **6080** → Port Visibility → **Public** so the viewer can be "
+                        "embedded here. It's protected by the VNC password (`vscode`).")
+            st.markdown("**Login-walled sites** (Workday, iCIMS, LinkedIn) can't be automated — use the "
+                        "Chrome extension in `extension/` for those: one click, fills instantly.")
+
 

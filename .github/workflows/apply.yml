@@ -50,27 +50,15 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        env:
-          STEEL_API_KEY: ${{ secrets.STEEL_API_KEY }}
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install playwright
-          if [ -z "$STEEL_API_KEY" ]; then
-            echo "::warning::STEEL_API_KEY not set — no LIVE view. Add it in Settings → Secrets → Actions."
-            echo "Installing local Chromium (slower)…"
-            playwright install --with-deps chromium
-          else
-            echo "STEEL_API_KEY found — the browser runs in Steel's cloud, skipping the Chromium download."
-            echo "The run will print a live viewer URL you can open from any device."
-          fi
+          playwright install --with-deps chromium
 
       - name: Apply
         env:
           CI: "true"
-          # With STEEL_API_KEY set, the browser runs in Steel's cloud and the run prints a LIVE
-          # viewer URL (also shown in the app) so you can watch it from your phone.
-          STEEL_API_KEY: ${{ secrets.STEEL_API_KEY }}
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAPI_KEY: ${{ secrets.OPENAPI_KEY }}
