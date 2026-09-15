@@ -1354,7 +1354,7 @@ with tab_autoapply:
         # ---------------------------------------------------------------- STEP 2 · run & watch
         st.divider()
         st.markdown("### 2 · Run it & watch live")
-        st.caption(f"{n_q} job(s) waiting in the queue.")
+        st.caption(f"{n_q} job(s) staged. Nothing runs until you press **Run & watch live**.")
 
         cs = st.text_input("Your Codespace name or URL", key="aa_cs",
                            value=str(st.session_state.get("aa_cs_saved", "")),
@@ -1377,8 +1377,14 @@ with tab_autoapply:
             b1, b2 = st.columns(2)
             if b1.button("▶ Run & watch live", type="primary", width="stretch",
                          disabled=(n_q == 0), key="aa_run_live"):
-                st.success(f"{n_q} job(s) queued — your Codespace picks them up within ~15s. "
-                           "Watch it happen below.")
+                # Queueing alone does NOT start anything — this releases the jobs to the watcher.
+                try:
+                    n_rel = S.release_queued()
+                    st.success(f"Released {n_rel} job(s) — your Codespace starts within ~15s. "
+                               "Watch below; it runs in slow motion and pauses on the filled form "
+                               "so you can take over.")
+                except Exception as _e:
+                    st.error(str(_e)[:160])
             b2.link_button("Open Codespace", "https://github.com/codespaces", width="stretch")
             st.caption("Your Codespace runs a watcher that applies to anything you queue, automatically. "
                        "If it's not running, open the Codespace terminal and start it:")
@@ -1427,7 +1433,7 @@ with tab_autoapply:
             st.info("Nothing queued yet.")
         else:
             import pandas as _pd
-            EMO = {"queued": "⏳ queued", "processing": "⚙️ running", "done": "✅ submitted",
+            EMO = {"queued": "📋 staged (press Run)", "ready": "🚀 released — starting", "processing": "⚙️ running", "done": "✅ submitted",
                    "needs_submit": "📝 filled — submit it", "needs_manual": "🔒 CAPTCHA — finish it",
                    "dead_link": "🔗 dead link", "error": "❌ error", "skipped": "⏭️ skipped"}
             df = _pd.DataFrame(rows)

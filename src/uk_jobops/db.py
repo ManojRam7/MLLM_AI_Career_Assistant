@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS apply_requests (
     processed_at TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX IF NOT EXISTS apply_requests_url_open
-    ON apply_requests (url) WHERE status IN ('queued','processing');
+    ON apply_requests (url) WHERE status IN ('queued','ready','processing');
 -- Step-by-step screenshots of an application being filled, so a headless CLOUD run is just as
 -- watchable as a local one (rendered as a filmstrip in the app).
 CREATE TABLE IF NOT EXISTS apply_steps (
@@ -616,7 +616,7 @@ class Store:
                 cur.execute(
                     "INSERT INTO apply_requests (url,title,company,source,auto_submit,status) "
                     "VALUES (%s,%s,%s,%s,%s,'queued') "
-                    "ON CONFLICT (url) WHERE status IN ('queued','processing') DO NOTHING RETURNING id",
+                    "ON CONFLICT (url) WHERE status IN ('queued','ready','processing') DO NOTHING RETURNING id",
                     (url, it.get("title", ""), it.get("company", ""),
                      it.get("source", "pasted"), bool(it.get("auto_submit", False)))
                 )
@@ -633,6 +633,13 @@ class Store:
             "SELECT id,url,title,company,source,auto_submit,status,note,requested_at,processed_at "
             "FROM apply_requests ORDER BY id DESC LIMIT %s", (limit,))
 
+    def release_queued(self) -> int:
+        """Mark everything staged as READY to run. The watcher only ever picks up 'ready', so queueing
+        jobs does NOT start a run — you stay in control of when it goes."""
+        with self.conn.cursor() as cur:
+            cur.execute("UPDATE apply_requests SET status='ready' WHERE status='queued'")
+            return cur.rowcount or 0
+
     def set_apply_request_status(self, req_id: int, status: str, note: str = "") -> None:
         with self.conn.cursor() as cur:
             cur.execute(
@@ -646,7 +653,7 @@ class Store:
             if which == "all":
                 cur.execute("DELETE FROM apply_requests")
             elif which == "queued":
-                cur.execute("DELETE FROM apply_requests WHERE status='queued'")
+                cur.execute("DELETE FROM apply_requests WHERE status IN ('queued','ready')")
             else:
                 cur.execute("DELETE FROM apply_requests WHERE status IN ('done','skipped','error','needs_submit')")
             return cur.rowcount or 0

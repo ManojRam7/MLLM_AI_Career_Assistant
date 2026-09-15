@@ -420,6 +420,10 @@ def main() -> None:
     ap.add_argument("--cv", default="", help="force a CV key for --url (e.g. ai-engineer, ds-azure)")
     ap.add_argument("--from-queue", dest="from_queue", action="store_true",
                     help="apply to the URLs you queued from the Auto-Apply panel (apply_requests)")
+    ap.add_argument("--slow", type=int, default=None,
+                    help="milliseconds between actions when watching (default 500; 0 = full speed)")
+    ap.add_argument("--review", type=int, default=None,
+                    help="seconds to pause on each FILLED form so you can edit/submit (default 45)")
     ap.add_argument("--hold", type=int, default=None,
                     help="seconds to keep the cloud browser alive after the run so you can watch / take "
                          "over (default 120 in the cloud; 0 disables)")
@@ -461,7 +465,7 @@ def main() -> None:
         print(f"TEST mode: applying to 1 URL with CV '{CV_LABEL.get(key, key)}'.\n")
     elif args.from_queue:
         # URLs the user queued from the Streamlit Auto-Apply control panel (apply_requests table).
-        reqs = store.apply_requests("queued", limit=args.limit)
+        reqs = store.apply_requests("ready", limit=args.limit)
         if not reqs:
             print("Auto-Apply queue is empty. Add URLs from the Streamlit 'Auto-Apply' tab (phone or laptop), "
                   "then re-run.  python scripts/auto_apply.py --from-queue")
@@ -521,7 +525,12 @@ def main() -> None:
         _args = ["--no-sandbox", "--disable-dev-shm-usage"]
         if headed:
             _args.append("--start-maximized")
-        browser = p.chromium.launch(headless=not headed, args=_args)
+        # SLOW MOTION when you're watching, so you can actually see each field being filled.
+        _slow = args.slow if args.slow is not None else int(acfg.get("slow_mo_ms", 500))
+        _slow = _slow if headed else 0
+        if _slow:
+            print(f"🐢 Slow motion: {_slow}ms between actions so you can follow along.")
+        browser = p.chromium.launch(headless=not headed, args=_args, slow_mo=_slow)
         _vid_dir = pathlib.Path(cfg.path("output/apply_videos"))
         _ctx_kw = {"accept_downloads": True, "viewport": {"width": 1440, "height": 1000}}
         if not headed:                             # record video so an unwatched run is reviewable
@@ -737,6 +746,17 @@ def main() -> None:
                     store.set_apply_request_status(req_id, _rs, f"CV {label} · filled {filled} fields")
                 except Exception:
                     pass
+            # PAUSE ON THE FILLED FORM so you can read it, edit anything, or submit yourself.
+            # (This must happen BEFORE page.close() — otherwise you're left looking at a blank browser.)
+            _review = args.review if args.review is not None else int(acfg.get("review_seconds", 45))
+            if headed and _review > 0 and not submitted:
+                print(f"    ⏸  Paused {_review}s on the filled form — take over in the viewer now "
+                      f"(edit anything, or press Submit yourself).")
+                store.log_apply_event(run_id=RUN_ID, url=job.get("url", ""),
+                                      company=job.get("company", ""), role_title=job.get("title", ""),
+                                      kind="note", field="Paused for you",
+                                      answer=f"{_review}s on the filled form", origin="auto")
+                time.sleep(_review)
             try:
                 page.close()
             except Exception:

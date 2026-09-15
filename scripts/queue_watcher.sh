@@ -45,7 +45,7 @@ echo "👁  Queue watcher running (every ${INTERVAL}s). Watch on port 6080."
 echo "    Anything you queue in the app gets applied here, visibly."
 
 while true; do
-  # Does the queue have anything waiting? (exit 0 = yes)
+  # Anything RELEASED to run? (only the app's Run button sets 'ready')
   if python - <<'PY' 2>/dev/null
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path("src").resolve()))
@@ -53,7 +53,7 @@ from uk_jobops.config import load_config
 from uk_jobops.db import Store
 cfg = load_config()
 s = Store(cfg.secrets.supabase_db_url); s.init_schema()
-n = len(s.apply_requests("queued", limit=50)); s.close()
+n = len(s.apply_requests("ready", limit=50)); s.close()
 sys.exit(0 if n else 1)
 PY
   then
