@@ -539,6 +539,23 @@ class Store:
             "count(DISTINCT url) AS jobs FROM apply_events WHERE run_id <> '' "
             "GROUP BY run_id ORDER BY max(created_at) DESC LIMIT %s", (limit,))
 
+    def latest_event_id(self) -> int:
+        """Highest apply_events id right now — take this BEFORE dispatching a run, so you can wait for
+        the NEW session's live-view URL instead of picking up a stale one from a finished run."""
+        rows = self._rows("SELECT COALESCE(max(id),0) AS mx FROM apply_events")
+        return int(rows[0]["mx"]) if rows else 0
+
+    def latest_live_view(self, after_id: int = 0) -> dict[str, Any] | None:
+        """The newest live-view URL logged AFTER `after_id` (i.e. belonging to the run you just started)."""
+        rows = self._rows(
+            "SELECT id, answer AS url, run_id, created_at FROM apply_events "
+            "WHERE kind='live_view' AND id > %s ORDER BY id DESC LIMIT 1", (after_id,))
+        return rows[0] if rows else None
+
+    def run_is_finished(self, run_id: str) -> bool:
+        rows = self._rows("SELECT 1 FROM apply_events WHERE run_id=%s AND kind='run_end' LIMIT 1", (run_id,))
+        return bool(rows)
+
     def apply_events(self, run_id: str, after_id: int = 0, limit: int = 800) -> list[dict[str, Any]]:
         return self._rows(
             "SELECT id,url,company,role_title,kind,field,answer,origin,ok,created_at FROM apply_events "

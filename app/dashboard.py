@@ -1498,6 +1498,12 @@ with tab_autoapply:
         else:
             if st.button("🚀 Run Auto-Apply in the cloud", type="primary", width="stretch",
                          disabled=(n_queued == 0), key="aa_run_cloud"):
+                # Mark where the event log is NOW, so we only accept the live view from THIS run
+                # (otherwise we'd show a stale URL from a finished session = "Browser Disconnected").
+                try:
+                    _since_id = _store_aa.latest_event_id()
+                except Exception:
+                    _since_id = 0
                 ok, msg = _trigger_workflow("apply.yml", {
                     "limit": int(run_limit), "source": "queued-urls",
                     "submit": bool(auto_submit_batch), "min_score": int(thr_aa)})
@@ -1506,21 +1512,16 @@ with tab_autoapply:
                     # Wait for the Steel LIVE viewer URL, then show it as the main thing (not GitHub).
                     _live_now, _ph = "", st.empty()
                     import time as _t2
-                    for _i in range(20):                      # up to ~60s (deps install first)
+                    for _i in range(40):                      # up to ~2min (runner boots + installs deps)
                         try:
-                            for _r in _store_aa.apply_event_runs(limit=3):
-                                _e2 = _store_aa.apply_events(_r["run_id"])
-                                _lv = next((e.get("answer") for e in _e2
-                                            if e.get("kind") == "live_view"), "")
-                                if _lv:
-                                    _live_now = _lv
-                                    break
+                            _lv = _store_aa.latest_live_view(after_id=_since_id)   # THIS run only
+                            if _lv and _lv.get("url"):
+                                _live_now = _lv["url"]
+                                break
                         except Exception:
                             pass
-                        if _live_now:
-                            break
-                        _ph.caption(f"⏳ Starting the live browser… {(_i + 1) * 3}s "
-                                    "(installing dependencies on the runner)")
+                        _ph.caption(f"⏳ Waiting for THIS run's live browser… {(_i + 1) * 3}s "
+                                    "(GitHub is booting the runner and installing dependencies)")
                         _t2.sleep(3)
                     _ph.empty()
                     if _live_now:
@@ -1619,9 +1620,13 @@ with tab_autoapply:
             st.markdown(("✅ **Finished**" if done else "🔴 **Running…**") + f" · {len(evs)} events")
             # LIVE BROWSER: Steel gives a viewer URL — embed it so you literally watch the form fill
             _live = next((e.get("answer") for e in evs if e.get("kind") == "live_view"), "")
-            if _live:
+            if _live and done:
+                st.info("This run has finished, so its browser session is closed — the viewer will just "
+                        "say *Browser Disconnected*. Use the screenshots below to see what it did, or "
+                        "start a new run to watch one live.")
+            elif _live:
                 st.link_button("📺 Watch the browser live", _live, width="stretch")
-                with st.expander("Show the live browser here", expanded=not done):
+                with st.expander("Show the live browser here", expanded=True):
                     _iframe(_live, height=620, scrolling=True)
                     st.caption("If it doesn't load embedded, use the button above — some browsers block "
                                "third-party iframes.")
